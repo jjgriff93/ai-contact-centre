@@ -8,15 +8,18 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai import (
-    AzureRealtimeExecutionSettings,
-    AzureRealtimeWebsocket,
-    ListenEvents,
-    TurnDetection,
-)
+from semantic_kernel.connectors.ai.open_ai import ListenEvents
 from semantic_kernel.contents import ChatHistory, RealtimeTextEvent
 from semantic_kernel.functions import kernel_function
 
+from azure_voice_live import (
+    AzureVoiceLiveExecutionSettings,
+    AzureVoiceLiveInputAudioEchoCancellation,
+    AzureVoiceLiveInputAudioNoiseReduction,
+    AzureVoiceLiveTurnDetection,
+    AzureVoiceLiveVoiceConfig,
+    AzureVoiceLiveWebsocket,
+)
 from utils import AudioPlayerWebsocket, AudioRecorderWebsocket
 
 logger = logging.getLogger(__name__)
@@ -30,10 +33,6 @@ tokenProvider = get_bearer_token_provider(
 )
 
 azure_cognitive_endpoint = os.environ["AZURE_COGNITIVE_ENDPOINT"]
-realtime_model_name = os.environ["REALTIME_MODEL"]
-voicelive_ws_endpoint = (
-    azure_cognitive_endpoint.replace("https://", "wss://") + "voice-live"
-)
 
 
 @kernel_function
@@ -67,9 +66,8 @@ async def main() -> None:
         plugin_name="helpers", functions=[goodbye, get_weather, get_date_time]
     )
 
-    realtime_agent = AzureRealtimeWebsocket(
+    realtime_agent = AzureVoiceLiveWebsocket(
         endpoint=azure_cognitive_endpoint,
-        websocket_base_url=voicelive_ws_endpoint,
         deployment_name="gpt-4o-mini-realtime-preview",
         ad_token_provider=tokenProvider,
         api_version="2025-05-01-preview",
@@ -90,7 +88,7 @@ async def main() -> None:
     # to signal the end of the user's turn and start the response.
     # manual VAD is not part of this sample
     # for more info: https://platform.openai.com/docs/api-reference/realtime-sessions/create#realtime-sessions-create-turn_detection
-    settings = AzureRealtimeExecutionSettings(
+    settings = AzureVoiceLiveExecutionSettings(
         instructions="""
     You are a chat bot. Your name is Mosscap and
     you have one goal: figure out what people need.
@@ -99,11 +97,21 @@ async def main() -> None:
     effectively, but you tend to answer with long
     flowery prose.
     """,
-        turn_detection=TurnDetection(
+        voice=AzureVoiceLiveVoiceConfig(
+            name="en-US-Ava:DragonHDLatestNeural",
+            type="azure-standard",
+        ),
+        turn_detection=AzureVoiceLiveTurnDetection(
             type="server_vad",
             create_response=True,
             silence_duration_ms=800,
             threshold=0.8,
+        ),
+        input_audio_noise_reduction=AzureVoiceLiveInputAudioNoiseReduction(
+            type="azure_deep_noise_suppression"
+        ),
+        input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
+            type="server_echo_cancellation"
         ),
         function_choice_behavior=FunctionChoiceBehavior.Auto(),
     )
@@ -147,10 +155,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    print(
-        "Instructions: The agent will start speaking immediately,"
-        "this can be turned off by removing `create_response=True` above."
-        "The model will detect when you stop and automatically generate a response. "
-        "Press ctrl + c to stop the program."
-    )
     asyncio.run(main())

@@ -16,9 +16,13 @@ THis demonstrates it can be used albeit with some limitations I've noticed so fa
   ```bash
   uv sync
   ```
+- Authenticate with Azure CLI:
+  ```bash
+  az login
+  ```
 - Run the sample:
   ```bash
-  uv run
+  uv run main.py
   ```
 
 You'll need to provide microphone permissions. If you're on Mac you may also need to `brew install portaudio` so that `pyaudio` can be installed.
