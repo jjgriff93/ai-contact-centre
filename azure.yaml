@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: aicc
+metadata:
+  template: azd-init@1.17.0
+services:
+  api:
+    project: api
+    host: containerapp
+    language: python
+resources:
+  api:
+    type: host.containerapp
+    port: 8000
+    uses:
+      - ai-project
+  storage:
+    type: storage
+    containers:
+      - eval
+  ai-project:
+    type: ai.project
+    models:
+      - name: gpt-4o-realtime-preview
+        version: "2025-06-03"
+        format: OpenAI
+        sku:
+          name: GlobalStandard
+          usageName: OpenAI.GlobalStandard.gpt-4o-realtime-preview
+          capacity: 5

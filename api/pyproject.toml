@@ -1,0 +1,14 @@
+[project]
+name = "aicc-api"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "azure-communication-callautomation>=1.4.0",
+    "azure-eventgrid>=4.22.0",
+    "azure-identity>=1.23.0",
+    "fastapi[standard]>=0.116.1",
+    "pydantic-settings>=2.10.1",
+    "semantic-kernel[realtime]>=1.32.2",
+    "websockets>=15.0.1",
+]

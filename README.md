@@ -1,28 +1,56 @@
-# Semantic Kernel integration with Azure Live Voice
+# AI Contact Centre with Voice Live
 
-A quick and simple repo to test the ability to use the existing SK `AzureRealtimeWebsocket` connector - intended for use with Azure OpenAI realtime models directly - with the [Azure Voice Live API](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-quickstart?tabs=macos%2Ckeyless), as it implements the same interface (mostly).
+A basic AI Contact Centre application that uses Azure Communication Services (ACS) to receive phone calls and Azure AI Foundry to provide a voice agent powered by the [Voice Live](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) API.
 
-Code is based on [Semantic Kernel's Python samples](https://github.com/microsoft/semantic-kernel/blob/main/python/samples/concepts/realtime/README.md).
+## Run locally
 
-THis demonstrates it can be used albeit with some limitations I've noticed so far:
-- You can't specify a voice model outside of the OpenAI ones in the `AzureRealtimeExecutionSettings` (i.e. to use the Azure nueral voices).
-- A websocket url has to be specified in the `AzureRealtimeWebsocket` connector otherwise SK will append `/openai` to the one it creates from the `endpoint` parameter which will result in a websocket 404.
+- Deploy the following resources in Azure:
 
-## Instructions
-- Deploy an Azure Foundry instance in a supported region for Voice Live (currently `eastus2` or `swedencentral`).
-- Create a .env file with the following variable:
-  - `AZURE_COGNITIVE_ENDPOINT`: The cognitive services endpoint for your Foundry resource (ends in `.cognitiveservices.azure.com/`).
+  - [Azure Communication Services](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/voice-quickstart-portal)
+  - [Azure AI Foundry Project](https://learn.microsoft.com/en-us/azure/ai-foundry/quickstart)
+
+- Create a new phone number in Azure Communication Services (ACS)
+
 - Install the required packages:
+
   ```bash
   uv sync
   ```
+
 - Authenticate with Azure CLI:
+
   ```bash
   az login
   ```
-- Run the sample:
+
+- Start a [devtunnel](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview):
+
   ```bash
-  uv run main.py
+  devtunnel login
+  devtunnel create --allow-anonymous
+  devtunnel port create -p 8000
+  devtunnel host
   ```
 
-You'll need to provide microphone permissions. If you're on Mac you may also need to `brew install portaudio` so that `pyaudio` can be installed.
+  Note your webtunnel URL provided by the devtunnel command.
+
+- In a new shell in the `api/app` folder, copy the `.env.example` file to `.env` and fill in the required values:
+
+  ```bash
+  cp .env.example .env
+  ```
+
+- Run the API:
+
+  ```bash
+  cd api && uv run fastapi dev
+  ```
+
+- Configure an Event Grid subscription for ACS to send events to your API by following [these instructions](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/incoming-call-notification), selecting Webhook for endpoint type, and supplying your devtunnel URL with the suffix `/api/incomingCall`.
+  > Your API needs to be running for the validation handshake to succeed.
+
+- Call the number you created in ACS to test the API is working. You should hear a greeting and be able to speak to the AI agent.
+
+## Deployment
+
+TODO: deploy with `azd provision` and [UV](https://docs.astral.sh/uv/guides/integration/fastapi/#deployment)
