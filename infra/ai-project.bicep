@@ -36,10 +36,10 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: false
   }
-  
+
   @batchSize(1)
   resource seqDeployments 'deployments' = [
-    for dep in (deployments??[]): {
+    for dep in (deployments ?? []): {
       name: dep.name
       properties: {
         model: dep.model
@@ -114,4 +114,3 @@ type deploymentsType = {
     capacity: int
   }
 }[]?
-

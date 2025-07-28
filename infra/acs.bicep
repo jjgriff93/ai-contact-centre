@@ -27,3 +27,4 @@ resource eventGridSystemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' = {
 }
 // NOTE: Event Grid Subscription for Call Events must be created after deployment as it needs live subscriber endpoint to validate
 output AZURE_EVENT_GRID_SYSTEM_TOPIC string = eventGridSystemTopic.name
+output ACS_ENDPOINT string = communicationService.outputs.endpoint

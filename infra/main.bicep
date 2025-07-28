@@ -6,7 +6,11 @@ targetScope = 'subscription'
 param environmentName string
 
 @minLength(1)
-@description('Primary location for all resources')
+@description('Primary location for all resources (filtered on available regions for Voice Live).')
+@allowed([
+  'eastus2'
+  'swedencentral'
+])
 param location string
 
 @metadata({
@@ -48,6 +52,7 @@ module resources 'resources.bicep' = {
     principalId: principalId
     apiExists: apiExists
     aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
+    acsEndpoint: acs.outputs.ACS_ENDPOINT
   }
 }
 
@@ -85,7 +90,10 @@ module acs 'acs.bicep' = {
   }
 }
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_RESOURCE_API_ID string = resources.outputs.AZURE_RESOURCE_API_ID
+output ACA_API_ENDPOINT string = resources.outputs.ACA_API_ENDPOINT
+output ACA_API_NAME string = resources.outputs.ACA_API_NAME
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
 output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId

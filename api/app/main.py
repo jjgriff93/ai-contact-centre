@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import uuid
+from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from azure.communication.callautomation import (AudioFormat,
@@ -14,7 +15,7 @@ from azure.communication.callautomation import (AudioFormat,
 from azure.communication.callautomation.aio import CallAutomationClient
 from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,23 +33,22 @@ from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveWebsocket)
 from .plugins.call import CallPlugin
 
+# TODO: this won't come from a .env in production, will it?
 DOTENV = os.path.join(os.path.dirname(__file__), ".env")
 
 class Settings(BaseSettings):
-    acs_connection_string: str = Field(..., description='Azure Communication Services connection string')
-    azure_cognitive_endpoint: str = Field(..., description='Azure Cognitive Services endpoint')
-    callback_host_uri: str = Field(..., description='Callback host URI for webhooks')
+    ACS_ENDPOINT: str = Field(..., description='Azure Communication Services endpoint')
+    AZURE_FOUNDRY_ENDPOINT: str = Field(..., description='Azure Cognitive Services endpoint')
+    ACS_CALLBACK_HOST_URI: Optional[str] = Field(..., description='Callback host URI for webhooks. If not specified will use the requests host URI.')
 
     model_config = SettingsConfigDict(env_file=DOTENV, env_file_encoding='utf-8')
 
 settings = Settings() # type: ignore
 app = FastAPI()
-acs_client = CallAutomationClient.from_connection_string(settings.acs_connection_string)
 
-tokenProvider = get_bearer_token_provider(
-    DefaultAzureCredential(),
-    "https://cognitiveservices.azure.com/.default",
-)
+credential = DefaultAzureCredential()
+
+acs_client = CallAutomationClient(settings.ACS_ENDPOINT, credential) # type: ignore
 
 
 async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase):
@@ -123,9 +123,12 @@ async def agent_connect(websocket: WebSocket):
     )
 
     realtime_client = AzureVoiceLiveWebsocket(
-        endpoint=settings.azure_cognitive_endpoint,
+        endpoint=settings.AZURE_FOUNDRY_ENDPOINT,
         deployment_name="gpt-4o-realtime-preview",
-        ad_token_provider=tokenProvider,
+        ad_token_provider=get_bearer_token_provider(
+            credential,
+            "https://cognitiveservices.azure.com/.default",
+        ),
         api_version="2025-05-01-preview",
     )
     print(f"Connecting to Realtime API at {realtime_client.client.websocket_base_url}")
@@ -192,8 +195,15 @@ async def agent_connect(websocket: WebSocket):
 
 
 @app.post("/api/incomingCall")
-async def incoming_call_handler(events: list[dict]):
-    callback_events_uri = settings.callback_host_uri + "/api/callbacks"
+async def incoming_call_handler(events: list[dict], request: Request):
+    """Handle incoming call events from Azure Communication Services."""
+    # This should be set in env when running locally to devtunnel uri
+    if not settings.ACS_CALLBACK_HOST_URI:
+        logging.debug("ACS_CALLBACK_HOST_URI is not set. Using host URI.")
+        callback_events_uri = str(request.base_url) + "/api/callbacks"
+    # When running in container app, this will be the request host uri
+    else:
+        callback_events_uri = settings.ACS_CALLBACK_HOST_URI + "/api/callbacks"
     for event_dict in events:
         event = EventGridEvent.from_dict(event_dict)
         match event.event_type:

@@ -10,6 +10,9 @@ param aiFoundryProjectEndpoint string
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Endpoint of the Azure Communication Service')
+param acsEndpoint string
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
@@ -132,12 +135,16 @@ module api 'br/public:avm/res/app/container-app:0.8.0' = {
             value: apiIdentity.outputs.clientId
           }
           {
-            name: 'AZURE_AI_PROJECT_ENDPOINT'
+            name: 'AZURE_FOUNDRY_ENDPOINT'
             value: aiFoundryProjectEndpoint
           }
           {
-            name: 'PORT'
-            value: '8000'
+            name: 'ACS_ENDPOINT'
+            value: acsEndpoint
+          }
+          {
+            name: 'ACS_CALLBACK_HOST_URI'
+            value: '' // Set by azd post-provision hook to container app's URL after deployment
           }
         ]
       }
@@ -187,3 +194,5 @@ resource apibackendRoleCognitiveServicesUserRG 'Microsoft.Authorization/roleAssi
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_RESOURCE_API_ID string = api.outputs.resourceId
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
+output ACA_API_NAME string = api.outputs.name
+output ACA_API_ENDPOINT string = api.outputs.fqdn
