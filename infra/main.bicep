@@ -21,7 +21,6 @@ param location string
     ]
   }
 })
-param aiDeploymentsLocation string
 param apiExists bool
 
 @description('Id of the user or app to assign application roles')
@@ -52,7 +51,7 @@ module resources 'resources.bicep' = {
     principalId: principalId
     apiExists: apiExists
     aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
-    acsEndpoint: acs.outputs.ACS_ENDPOINT
+    communicationServiceName: acs.outputs.AZURE_COMMUNICATION_SERVICE_NAME
   }
 }
 
@@ -61,7 +60,7 @@ module aiModelsDeploy 'ai-project.bicep' = {
   name: 'ai-project'
   params: {
     tags: tags
-    location: aiDeploymentsLocation
+    location: location
     envName: environmentName
     principalId: principalId
     deployments: [
@@ -92,8 +91,6 @@ module acs 'acs.bicep' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_RESOURCE_API_ID string = resources.outputs.AZURE_RESOURCE_API_ID
-output ACA_API_ENDPOINT string = resources.outputs.ACA_API_ENDPOINT
-output ACA_API_NAME string = resources.outputs.ACA_API_NAME
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
 output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId

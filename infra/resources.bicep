@@ -10,8 +10,8 @@ param aiFoundryProjectEndpoint string
 @description('Id of the user or app to assign application roles')
 param principalId string
 
-@description('Endpoint of the Azure Communication Service')
-param acsEndpoint string
+@description('Name of the Azure Communication Service')
+param communicationServiceName string
 
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
@@ -99,6 +99,7 @@ module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
     location: location
   }
 }
+
 module apiFetchLatestImage './modules/fetch-container-image.bicep' = {
   name: 'api-fetch-image'
   params: {
@@ -107,10 +108,14 @@ module apiFetchLatestImage './modules/fetch-container-image.bicep' = {
   }
 }
 
+resource acs 'Microsoft.Communication/communicationServices@2023-04-01' existing = {
+  name: communicationServiceName
+}
+
 module api 'br/public:avm/res/app/container-app:0.8.0' = {
   name: 'api'
   params: {
-    name: 'api'
+    name: 'api-${resourceToken}'
     ingressTargetPort: 8000
     scaleMinReplicas: 1
     scaleMaxReplicas: 10
@@ -140,11 +145,7 @@ module api 'br/public:avm/res/app/container-app:0.8.0' = {
           }
           {
             name: 'ACS_ENDPOINT'
-            value: acsEndpoint
-          }
-          {
-            name: 'ACS_CALLBACK_HOST_URI'
-            value: '' // Set by azd post-provision hook to container app's URL after deployment
+            value: acs.properties.hostName
           }
         ]
       }
@@ -191,8 +192,19 @@ resource apibackendRoleCognitiveServicesUserRG 'Microsoft.Authorization/roleAssi
   }
 }
 
+resource apibackendRoleCommunicationServiceContributor 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, acs.id, apiIdentity.name, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  scope: acs
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    )
+    principalId: apiIdentity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_RESOURCE_API_ID string = api.outputs.resourceId
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
-output ACA_API_NAME string = api.outputs.name
-output ACA_API_ENDPOINT string = api.outputs.fqdn

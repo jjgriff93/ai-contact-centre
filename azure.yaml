@@ -29,14 +29,3 @@ resources:
           name: GlobalStandard
           usageName: OpenAI.GlobalStandard.gpt-4o-realtime-preview
           capacity: 5
-hooks:
-  postprovision:
-    shell: sh
-    continueOnError: false
-    interactive: true
-    run: |
-      echo "Updating container app env with ACS Callback Host URI..."
-      az containerapp update \
-        --name $(azd env get ACA_API_NAME) \
-        --resource-group $(azd env get AZURE_RESOURCE_GROUP) \
-        --set-env-vars ACS_CALLBACK_HOST_URI=$(azd env get ACA_API_ENDPOINT)
