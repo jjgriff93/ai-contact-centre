@@ -42,7 +42,7 @@ async def wait_for_assistant_to_finish(harness: VoiceCallClient, timeout: float 
     start_time = time.time()
     initial_wait = True
     
-    THRESHOLD = 2.0  # seconds of silence to consider assistant finished
+    THRESHOLD = 4.0  # seconds of silence to consider assistant finished
 
     while True:
         current_time = time.time()
@@ -123,7 +123,7 @@ async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
         await harness.send_audio_chunk(pcm_chunk)
     
     # Send silence to trigger VAD
-    post_silence = b'\x00' * (24000 * 2)  # 1 second of silence
+    post_silence = b'\x00' * (24000 * 2)  # 1 second of silence, 24KHz (24000 samples), 16-bit mono (2 bytes per sample)
     audio.extend(post_silence)
     await harness.send_audio_chunk(post_silence)
 
@@ -185,7 +185,7 @@ class ProxyHumanScenario(TestScenario):
             
             # Get proxy human response
             print("\nGenerating customer response...")
-            customer_response = await ask_proxy_human(aoai_client, state.history)
+            customer_response = await ask_proxy_human(aoai_client, state.history, self.system_prompt)
             print(f"Customer: {customer_response}")
             
             # Check if conversation should end

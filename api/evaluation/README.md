@@ -38,7 +38,7 @@ cd ./ai-contact-centre/api
 uv sync
 ```
 
-Update the .env file in the ./ai-contact-centre/api folder for the aifoundry endpoint
+Update the .env file in the ./ai-contact-centre/api folder for the ai foundry endpoint
 
 ### 3. Setup the test runner .env file in the api/evaluation directory
 
@@ -62,4 +62,10 @@ uv run fastapi dev
 ```bash
 cd ~/ai-contact-centre/api
 uv run python -m evaluation.conversation_test_runner
+```
+
+### 6. Check the test_outputs folder for generated audio and the transcript in json
+
+```bash
+cd ~/ai-contact-centre/api/test_outputs
 ```
