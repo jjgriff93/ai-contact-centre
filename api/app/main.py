@@ -33,15 +33,11 @@ from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveWebsocket)
 from .plugins.call import CallPlugin
 
-# TODO: this won't come from a .env in production, will it?
-DOTENV = os.path.join(os.path.dirname(__file__), ".env")
 
 class Settings(BaseSettings):
     ACS_ENDPOINT: str = Field(..., description='Azure Communication Services endpoint')
     AZURE_FOUNDRY_ENDPOINT: str = Field(..., description='Azure Cognitive Services endpoint')
     ACS_CALLBACK_HOST_URI: Optional[str] = Field(..., description='Callback host URI for webhooks. If not specified will use the requests host URI.')
-
-    model_config = SettingsConfigDict(env_file=DOTENV, env_file_encoding='utf-8')
 
 settings = Settings() # type: ignore
 app = FastAPI()

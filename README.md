@@ -28,42 +28,53 @@ azd up
 
 This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and configure the API to use the Azure Communication Services (ACS) resource created during deployment using a postprovision hook.
 
-### Interact with the AI Contact Centre agent
-
-To interact with the AI Contact Centre agent, you will need to call the phone number created in ACS during the deployment process. You can find this number in the Azure portal under the Communication Services resource created by `azd up`.
-
-When you call this number, you should hear a greeting and be able to speak to the AI agent powered by Voice Live.
-
 ### Run API locally
 
-To run the API locally, follow these steps:
+#### First-time setup
 
-- Start a [devtunnel](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview):
-
-  ```bash
-  devtunnel login
-  devtunnel create --allow-anonymous
-  devtunnel port create -p 8000
-  devtunnel host
-  ```
-
-  Note your webtunnel URL provided by the devtunnel command.
-
-- In a new shell in the `api/app` folder, copy the `.env.example` file to `.env` and fill in the required values:
+- Create a [devtunnel](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview):
 
   ```bash
-  cp .env.example .env
+  task devtunnel:create
   ```
 
-  > TODO: Generate this automatically using azd outputs
+- Host the devtunnel:
+
+  ```bash
+  task devtunnel:host
+  ```
+
+  Copy the webtunnel URL from the output.
+
+- Update your local azd env file with the devtunnel URL:
+
+  ```bash
+  azd env set ACS_CALLBACK_HOST_URI=<your-devtunnel-url>
+  ```
+
+  Replace `<your-devtunnel-url>` with the webtunnel URL you copied earlier.
 
 - Run the API:
 
   ```bash
-  uv run fastapi dev
+  task api:run
   ```
 
 - Configure an Event Grid subscription for ACS to send events to your API by following [these instructions](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/incoming-call-notification), selecting Webhook for endpoint type, and supplying your devtunnel URL with the suffix `/api/incomingCall`.
   > Your API needs to be running for the validation handshake to succeed.
 
+#### Each time
+
+> Make sure your devtunnel is running in a terminal window. If not, start it with `task devtunnel:host`.
+
+- Run the API:
+
+  ```bash
+  task api:run
+  ```
+
 - Call the number you created in ACS to test the API is working. You should hear a greeting and be able to speak to the AI agent.
+
+### Use deployed API
+
+> TODO
