@@ -140,12 +140,10 @@ async def agent_connect(websocket: WebSocket):
     # Create the settings for the session
     execution_settings = AzureVoiceLiveExecutionSettings(
         instructions="""
-    You are a chat bot. Your name is Mosscap and
-    you have one goal: figure out what people need.
-    Your full name, should you need to know it, is
-    Splendid Speckled Mosscap. You communicate
-    effectively, but you tend to answer with long
-    flowery prose.
+    You are a helpful support agent for a contact center.
+    A customer has called you and needs help with an issue or request.
+    Be polite and considered in your responses and utilise
+    the tools available to you to help the customer.
     """,
         voice=AzureVoiceLiveVoiceConfig(
             name="en-US-Ava:DragonHDLatestNeural",
