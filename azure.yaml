@@ -9,6 +9,7 @@ services:
     language: python
     docker:
       path: ./Dockerfile
+      remoteBuild: true
 resources:
   api:
     type: host.containerapp

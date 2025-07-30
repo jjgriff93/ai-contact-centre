@@ -85,6 +85,7 @@ resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/r
 }
 
 output ENDPOINT string = aiAccount::project.properties.endpoints['AI Foundry API']
+output AZURE_AI_SERVICES_ENDPOINT string = 'https://${aiAccount.name}.cognitiveservices.azure.com/'
 output projectId string = aiAccount::project.id
 output aiServicesAccountName string = aiAccount.name
 output aiServicesProjectName string = aiAccount::project.name

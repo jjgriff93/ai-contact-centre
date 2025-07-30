@@ -4,15 +4,16 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 
 ## Getting started
 
-### Prerequisites
+### 1. Prerequisites
 
 - An Azure account. If you don't have one, you can create a free account [here](https://azure.microsoft.com/free/).
 - [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/)
 - [Python 3.12](https://www.python.org/downloads/)
 - [Devtunnel CLI](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview)
 - [UV](https://www.uv.dev/)
+- [Taskfile](https://taskfile.dev/)
 
-### Deploy resources
+### 2. Deploy resources
 
 First authenticate with Azure using the Azure Developer CLI:
 
@@ -26,9 +27,13 @@ Then you can deploy the resources by running the following command:
 azd up
 ```
 
-This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and configure the API to use the Azure Communication Services (ACS) resource created during deployment using a postprovision hook.
+This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and deploy the packaged `api` to the Azure Container Apps environment.
 
-### Run API locally
+### 3. Purchase an ACS phone number
+
+You can purchase a phone number from the Azure portal or using the Azure CLI. Follow the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new) to purchase a phone number.
+
+### 4. Run API locally
 
 #### First-time setup
 
@@ -49,7 +54,7 @@ This will package up the code in the `api` folder, deploy the Azure resources de
 - Update your local azd env file with the devtunnel URL:
 
   ```bash
-  azd env set ACS_CALLBACK_HOST_URI=<your-devtunnel-url>
+  azd env set AZURE_ACS_CALLBACK_HOST_URI <your-devtunnel-url>
   ```
 
   Replace `<your-devtunnel-url>` with the webtunnel URL you copied earlier.
@@ -57,7 +62,7 @@ This will package up the code in the `api` folder, deploy the Azure resources de
 - Run the API:
 
   ```bash
-  task api:run
+  task api
   ```
 
 - Configure an Event Grid subscription for ACS to send events to your API by following [these instructions](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/incoming-call-notification), selecting Webhook for endpoint type, and supplying your devtunnel URL with the suffix `/api/incomingCall`.
@@ -70,11 +75,15 @@ This will package up the code in the `api` folder, deploy the Azure resources de
 - Run the API:
 
   ```bash
-  task api:run
+  task api
   ```
 
 - Call the number you created in ACS to test the API is working. You should hear a greeting and be able to speak to the AI agent.
 
-### Use deployed API
+### 5. Use Remote API
 
-> TODO
+Like with the local API, set up an Event Grid subscription for the remote API to respond to ACS `IncomingCall`, instead supplying the Container App's URL with the suffix `/api/incomingCall`.
+
+> Disable the local API event grid subscription to avoid conflicts.
+
+Then phoning the ACS number should connect you to the AI agent running in the Azure Container App.

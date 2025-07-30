@@ -2,7 +2,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import uuid
 from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -15,10 +14,11 @@ from azure.communication.callautomation import (AudioFormat,
 from azure.communication.callautomation.aio import CallAutomationClient
 from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from dotenv_azd import AzdCommandNotFoundError, load_azd_env
 from fastapi import FastAPI, Request, WebSocket
 from numpy import ndarray
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import ListenEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
@@ -35,16 +35,23 @@ from .plugins.call import CallPlugin
 
 
 class Settings(BaseSettings):
-    ACS_ENDPOINT: str = Field(..., description='Azure Communication Services endpoint')
-    AZURE_FOUNDRY_ENDPOINT: str = Field(..., description='Azure Cognitive Services endpoint')
-    ACS_CALLBACK_HOST_URI: Optional[str] = Field(..., description='Callback host URI for webhooks. If not specified will use the requests host URI.')
+    AZURE_ACS_ENDPOINT: str = Field(..., description='Azure Communication Services endpoint')
+    AZURE_AI_SERVICES_ENDPOINT: str = Field(..., description='Azure AI (Cognitive) Services endpoint')
+    AZURE_ACS_CALLBACK_HOST_URI: Optional[str] = Field(None, description='Callback host URI for webhooks. If not specified will use the requests host URI.')
+
+# Load environment variables from azd .env file when present (for local development)
+try:
+    load_azd_env()
+except AzdCommandNotFoundError as e:
+    logging.warning(f"No azd cli present. Assuming environment variables are already set.")
 
 settings = Settings() # type: ignore
 app = FastAPI()
 
+# Get credential for authentication to Azure services (from Azure CLI locally and Managed Identity in Azure Container Apps)
 credential = DefaultAzureCredential()
 
-acs_client = CallAutomationClient(settings.ACS_ENDPOINT, credential) # type: ignore
+acs_client = CallAutomationClient(settings.AZURE_ACS_ENDPOINT, credential) # type: ignore
 
 
 async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase):
@@ -103,6 +110,7 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
 
 @app.websocket("/ws")
 async def agent_connect(websocket: WebSocket):
+    """Websocket endpoint for connecting from ACS Audio Stream to the agent."""
     await websocket.accept()
     call_connection_id = websocket.headers.get("x-ms-call-connection-id")
 
@@ -119,7 +127,7 @@ async def agent_connect(websocket: WebSocket):
     )
 
     realtime_client = AzureVoiceLiveWebsocket(
-        endpoint=settings.AZURE_FOUNDRY_ENDPOINT,
+        endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
         deployment_name="gpt-4o-realtime-preview",
         ad_token_provider=get_bearer_token_provider(
             credential,
@@ -194,12 +202,14 @@ async def agent_connect(websocket: WebSocket):
 async def incoming_call_handler(events: list[dict], request: Request):
     """Handle incoming call events from Azure Communication Services."""
     # This should be set in env when running locally to devtunnel uri
-    if not settings.ACS_CALLBACK_HOST_URI:
-        logging.debug("ACS_CALLBACK_HOST_URI is not set. Using host URI.")
-        callback_events_uri = str(request.base_url) + "/api/callbacks"
+    if not settings.AZURE_ACS_CALLBACK_HOST_URI:
+        logging.debug("AZURE_ACS_CALLBACK_HOST_URI is not set. Using host URI.")
+        callback_base_uri = str(request.base_url)
     # When running in container app, this will be the request host uri
     else:
-        callback_events_uri = settings.ACS_CALLBACK_HOST_URI + "/api/callbacks"
+        callback_base_uri = settings.AZURE_ACS_CALLBACK_HOST_URI
+
+    callback_events_uri = f"{callback_base_uri}/api/callbacks"
     for event_dict in events:
         event = EventGridEvent.from_dict(event_dict)
         match event.event_type:
@@ -286,3 +296,8 @@ async def callbacks(contextId: str, events: list[dict]):
             case "Microsoft.Communication.CallDisconnected":
                 logging.debug(f"Call disconnected for connection id: {call_connection_id}")
                 logging.debug(f"Call disconnected for connection id: {call_connection_id}")
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

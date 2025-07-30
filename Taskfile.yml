@@ -3,20 +3,6 @@
 version: '3'
 
 tasks:
-  deploy:
-    cmds:
-      - azd auth login
-      - azd up
-  load-azd-env:
-    cmds:
-      - |
-        echo "Loading azd .env file from current environment..."
-        while IFS='=' read -r key value; do
-            value=$(echo "$value" | sed 's/^"//' | sed 's/"$//')
-            export "$key=$value"
-        done <<EOF
-        $(azd env get-values)
-        EOF
   devtunnel:create:
     cmds:
       - |
@@ -26,9 +12,7 @@ tasks:
   devtunnel:host:
     cmds:
       - devtunnel host aicontactcentre
-  api:run:
-    deps:
-      - load-azd-env
+  api:
     dir: api
     cmds:
       - uv run fastapi dev

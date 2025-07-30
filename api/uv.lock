@@ -3,6 +3,33 @@ revision = 2
 requires-python = ">=3.12"
 
 [[package]]
+name = "aicc-api"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "azure-communication-callautomation" },
+    { name = "azure-eventgrid" },
+    { name = "azure-identity" },
+    { name = "dotenv-azd" },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "pydantic-settings" },
+    { name = "semantic-kernel", extra = ["realtime"] },
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "azure-communication-callautomation", specifier = ">=1.4.0" },
+    { name = "azure-eventgrid", specifier = ">=4.22.0" },
+    { name = "azure-identity", specifier = ">=1.23.0" },
+    { name = "dotenv-azd", specifier = ">=0.3.0" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.116.1" },
+    { name = "pydantic-settings", specifier = ">=2.10.1" },
+    { name = "semantic-kernel", extras = ["realtime"], specifier = ">=1.32.2" },
+    { name = "websockets", specifier = ">=15.0.1" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -459,6 +486,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b5/4a/263763cb2ba3816dd94b08ad3a33d5fdae34ecb856678773cc40a3605829/dnspython-2.7.0.tar.gz", hash = "sha256:ce9c432eda0dc91cf618a5cedf1a4e142651196bbcd2c80e89ed5a907e5cfaf1", size = 345197, upload-time = "2024-10-05T20:14:59.362Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/68/1b/e0a87d256e40e8c888847551b20a017a6b98139178505dc7ffb96f04e954/dnspython-2.7.0-py3-none-any.whl", hash = "sha256:b4c34b7d10b51bcc3a5071e7b8dee77939f1e878477eeecc965e9835f63c6c86", size = 313632, upload-time = "2024-10-05T20:14:57.687Z" },
+]
+
+[[package]]
+name = "dotenv-azd"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dotenv" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/95/61a3b01f6fccd2b3d4df619ecb91e986f88eedf18cf6ab4799cf21cf7025/dotenv_azd-0.3.0.tar.gz", hash = "sha256:6905c9b7f57e795d66eccb3951814fc62c53fa1d0b22574ee1f726565e543026", size = 9879, upload-time = "2025-05-08T16:25:38.508Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/f6/35a119a3dcfc8995542fee35c83e800a144890337c9a8377d22a2052fa1d/dotenv_azd-0.3.0-py3-none-any.whl", hash = "sha256:db57c4cba883662f23a64d86bc3dd1bdf91bcbf13f6452d3db4c156c203657a4", size = 4528, upload-time = "2025-05-08T16:25:37.098Z" },
 ]
 
 [[package]]
@@ -1758,31 +1797,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/87/b8/01c29b924dcbbed75cc45b30c30d565d763b9c4d540545a0eeecffb8f09c/ruamel.yaml.clib-0.2.12-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:4f6f3eac23941b32afccc23081e1f50612bdbe4e982012ef4f5797986828cd01", size = 709059, upload-time = "2024-12-11T19:58:18.846Z" },
     { url = "https://files.pythonhosted.org/packages/30/8c/ed73f047a73638257aa9377ad356bea4d96125b305c34a28766f4445cc0f/ruamel.yaml.clib-0.2.12-cp313-cp313-win32.whl", hash = "sha256:6442cb36270b3afb1b4951f060eccca1ce49f3d087ca1ca4563a6eb479cb3de6", size = 98583, upload-time = "2024-10-20T10:13:09.658Z" },
     { url = "https://files.pythonhosted.org/packages/b0/85/e8e751d8791564dd333d5d9a4eab0a7a115f7e349595417fd50ecae3395c/ruamel.yaml.clib-0.2.12-cp313-cp313-win_amd64.whl", hash = "sha256:e5b8daf27af0b90da7bb903a876477a9e6d7270be6146906b276605997c7e9a3", size = 115190, upload-time = "2024-10-20T10:13:10.66Z" },
-]
-
-[[package]]
-name = "aicc-api"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "azure-communication-callautomation" },
-    { name = "azure-eventgrid" },
-    { name = "azure-identity" },
-    { name = "fastapi", extra = ["standard"] },
-    { name = "pydantic-settings" },
-    { name = "semantic-kernel", extra = ["realtime"] },
-    { name = "websockets" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "azure-communication-callautomation", specifier = ">=1.4.0" },
-    { name = "azure-eventgrid", specifier = ">=4.22.0" },
-    { name = "azure-identity", specifier = ">=1.23.0" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.116.1" },
-    { name = "pydantic-settings", specifier = ">=2.10.1" },
-    { name = "semantic-kernel", extras = ["realtime"], specifier = ">=1.32.2" },
-    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [[package]]

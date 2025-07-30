@@ -42,7 +42,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-module resources 'resources.bicep' = {
+module resources 'modules/container.bicep' = {
   scope: rg
   name: 'resources'
   params: {
@@ -50,12 +50,13 @@ module resources 'resources.bicep' = {
     tags: tags
     principalId: principalId
     apiExists: apiExists
-    aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
+    aiServicesEndpoint: aiModelsDeploy.outputs.AZURE_AI_SERVICES_ENDPOINT
     communicationServiceName: acs.outputs.AZURE_COMMUNICATION_SERVICE_NAME
+    eventGridSystemTopicName: acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC
   }
 }
 
-module aiModelsDeploy 'ai-project.bicep' = {
+module aiModelsDeploy 'modules/ai-project.bicep' = {
   scope: rg
   name: 'ai-project'
   params: {
@@ -80,7 +81,7 @@ module aiModelsDeploy 'ai-project.bicep' = {
   }
 }
 
-module acs 'acs.bicep' = {
+module acs 'modules/acs.bicep' = {
   scope: rg
   name: 'acs'
   params: {
@@ -88,10 +89,14 @@ module acs 'acs.bicep' = {
     tags: tags
   }
 }
+
+output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
+output AZURE_AI_SERVICES_ENDPOINT string = aiModelsDeploy.outputs.AZURE_AI_SERVICES_ENDPOINT
+output AZURE_ACS_ENDPOINT string = acs.outputs.AZURE_COMMUNICATION_SERVICE_ENDPOINT
+output AZURE_ACS_EVENT_GRID_SYSTEM_TOPIC string = acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_CONTAINER_APP_URI string = resources.outputs.AZURE_CONTAINER_APP_URI
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_RESOURCE_API_ID string = resources.outputs.AZURE_RESOURCE_API_ID
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
-output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
-output AZURE_ACS_EVENT_GRID_SYSTEM_TOPIC string = acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC
