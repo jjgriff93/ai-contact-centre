@@ -6,7 +6,11 @@ targetScope = 'subscription'
 param environmentName string
 
 @minLength(1)
-@description('Primary location for all resources')
+@description('Primary location for all resources (filtered on available regions for Voice Live).')
+@allowed([
+  'eastus2'
+  'swedencentral'
+])
 param location string
 
 @metadata({
@@ -17,46 +21,50 @@ param location string
     ]
   }
 })
-param aiDeploymentsLocation string
 param apiExists bool
 
 @description('Id of the user or app to assign application roles')
 param principalId string
+
+@description('Tags that will be applied to all resources')
+param tags object = {}
 
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
 // Example usage:
 //   tags: union(tags, { 'azd-service-name': <service name in azure.yaml> })
-var tags = {
+var commonTags = union(tags, {
   'azd-env-name': environmentName
-}
+})
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${environmentName}'
   location: location
-  tags: tags
+  tags: commonTags
 }
 
-module resources 'resources.bicep' = {
+module resources 'modules/container.bicep' = {
   scope: rg
   name: 'resources'
   params: {
     location: location
-    tags: tags
+    tags: commonTags
     principalId: principalId
     apiExists: apiExists
-    aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
+    aiServicesEndpoint: aiModelsDeploy.outputs.AZURE_AI_SERVICES_ENDPOINT
+    communicationServiceName: acs.outputs.AZURE_COMMUNICATION_SERVICE_NAME
+    eventGridSystemTopicName: acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC
   }
 }
 
-module aiModelsDeploy 'ai-project.bicep' = {
+module aiModelsDeploy 'modules/ai-project.bicep' = {
   scope: rg
   name: 'ai-project'
   params: {
-    tags: tags
-    location: aiDeploymentsLocation
+    tags: commonTags
+    location: location
     envName: environmentName
     principalId: principalId
     deployments: [
@@ -76,17 +84,22 @@ module aiModelsDeploy 'ai-project.bicep' = {
   }
 }
 
-module acs 'acs.bicep' = {
+module acs 'modules/acs.bicep' = {
   scope: rg
   name: 'acs'
   params: {
     location: location
-    tags: tags
+    tags: commonTags
   }
 }
+
+output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
+output AZURE_AI_SERVICES_ENDPOINT string = aiModelsDeploy.outputs.AZURE_AI_SERVICES_ENDPOINT
+output AZURE_ACS_ENDPOINT string = acs.outputs.AZURE_COMMUNICATION_SERVICE_ENDPOINT
+output AZURE_ACS_EVENT_GRID_SYSTEM_TOPIC string = acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_CONTAINER_APP_URI string = resources.outputs.AZURE_CONTAINER_APP_URI
+output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_RESOURCE_API_ID string = resources.outputs.AZURE_RESOURCE_API_ID
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
-output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
-output AZURE_ACS_EVENT_GRID_SYSTEM_TOPIC string = acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC

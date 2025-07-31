@@ -7,7 +7,7 @@ param tags object = {}
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
 module communicationService 'br/public:avm/res/communication/communication-service:0.4.0' = {
-  name: 'acs'
+  name: 'acs-${resourceToken}'
   params: {
     dataLocation: 'Europe'
     name: 'acs-${resourceToken}'
@@ -18,12 +18,14 @@ module communicationService 'br/public:avm/res/communication/communication-servi
 
 resource eventGridSystemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' = {
   name: '${communicationService.name}-system-topic'
-  location: location
+  location: 'global'
   tags: tags
   properties: {
     source: resourceId('Microsoft.Communication/CommunicationServices', communicationService.name)
     topicType: 'Microsoft.Communication.CommunicationServices'
   }
 }
-// NOTE: Event Grid Subscription for Call Events must be created after deployment as it needs live subscriber endpoint to validate
+
 output AZURE_EVENT_GRID_SYSTEM_TOPIC string = eventGridSystemTopic.name
+output AZURE_COMMUNICATION_SERVICE_NAME string = communicationService.outputs.name
+output AZURE_COMMUNICATION_SERVICE_ENDPOINT string = communicationService.outputs.endpoint
