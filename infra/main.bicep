@@ -18,6 +18,9 @@ param location string
     type: 'location'
     usageName: [
       'OpenAI.GlobalStandard.gpt-4o-realtime-preview,5'
+      'OpenAI.GlobalStandard.gpt-4o-mini-transcribe,100'
+      'OpenAI.GlobalStandard.gpt-4o-mini-tts,100'
+      'OpenAI.GlobalStandard.gpt-4.1,150'
     ]
   }
 })
@@ -80,6 +83,43 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
           capacity: 5
         }
       }
+      {
+        name: 'gpt4oMiniTranscribeDeployment'
+        model: {
+          name: 'gpt-4o-mini-transcribe'
+          format: 'OpenAI'
+          version: '2025-03-20'
+        }
+        sku: {
+          name: 'GlobalStandard'
+          capacity: 100
+        }
+      }
+      // Currently not availale in Sweden Central, deploy manually for now
+      // {
+      //   name: 'gpt4oMiniTTSDeployment'
+      //   model: {
+      //     name: 'gpt-4o-mini-tts'
+      //     format: 'OpenAI'
+      //     version: '2025-03-20'
+      //   }
+      //   sku: {
+      //     name: 'GlobalStandard'
+      //     capacity: 100
+      //   }
+      // }
+      {
+        name: 'gpt41Deployment'
+        model: {
+          name: 'gpt-4.1'
+          format: 'OpenAI'
+          version: '2025-04-14'
+        }
+        sku: {
+          name: 'GlobalStandard'
+          capacity: 150
+        }
+      }
     ]
   }
 }
@@ -103,3 +143,6 @@ output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_RESOURCE_API_ID string = resources.outputs.AZURE_RESOURCE_API_ID
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
+
+output AZURE_CHAT_MODEL_DEPLOYMENT_NAME string = 'gpt41Deployment'
+output AZURE_TTS_MODEL_DEPLOYMENT_NAME string = 'gpt4oMiniTTSDeployment'

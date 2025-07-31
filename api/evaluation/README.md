@@ -4,68 +4,27 @@ The `conversation_test_runner.py` script is designed to simulate and test conver
 
 ## Pre-requisites
 
-1. AI Foundry - get the endpoint which will look like this: https://<aifoundryname>.cognitiveservices.azure.com
-2. In the AI Foundry - deploy base models: 
-    gpt-4o-realtime-preview
-    gpt-4o-mini-transcribe
-    gpt-4o-mini-tts
-    gpt-4.1
-    
-3. **Package manager** Install uv.
+- Deploy the solution as detailed in the main [README](../../README.md) file.
+- Go to your AI Foundry and deploy `gpt-4o-mini-tts` (this is not yet avaiable in `Sweden Central` so manual deployment is required to create a secondary linked region in `eastus2` for this model). Call the deployment `gpt4oMiniTTSDeployment`.
 
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
+### Run the test/conversation code
 
+First, ensure you're logged into Azure either via `azd auth login` or `az login` so that the authentication works on the OpenAI endpoints.
 
-## Setup Instructions
-
-### 1. Clone the Repository
+Then, start the API server in a terminal window:
 
 ```bash
-git clone https://github.com/jjgriff93/ai-contact-centre.git
-cd ai-contact-centre/api
+task api
 ```
 
-### 2. Setup the server
+Finally, run the test runner in another terminal window:
 
-Instruction are here:
-[README](https://github.com/jjgriff93/ai-contact-centre/blob/main/README.md)
-
-Install python and the python package dependencies
 ```bash
-cd ./ai-contact-centre/api
-uv sync
+task test
 ```
 
-Update the .env file in the ./ai-contact-centre/api folder for the ai foundry endpoint
-
-### 3. Setup the test runner .env file in the api/evaluation directory
-
-We're using token based authentication so you don't need a key, but you will need to az login
-```bash
-AZURE_OPENAI_ENDPOINT=https://<your-openai-endpoint>.openai.azure.com/
-AZURE_OPENAI_CHAT_DEPLOYMENT=<your-chat-deployment-name>
-AZURE_OPENAI_TTS_DEPLOYMENT=<your-tts-deployment-name>
-```
-
-### 3. az login  (so the auth works on the openai endpoints)
-
-### 4. Start the server
+### 5. Check the test_outputs folder for generated audio and the transcript in json
 
 ```bash
-cd ./ai-contact-centre/api
-uv run fastapi dev
-```
-### 5. Run the test/conversation code
-
-```bash
-cd ~/ai-contact-centre/api
-uv run python -m evaluation.conversation_test_runner
-```
-
-### 6. Check the test_outputs folder for generated audio and the transcript in json
-
-```bash
-cd ~/ai-contact-centre/api/test_outputs
+cd api/test_outputs
 ```

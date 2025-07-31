@@ -1,26 +1,34 @@
 import asyncio
 import json
-from pathlib import Path
-import time
-from typing import List, Dict
 import logging
 import os
+import time
 from datetime import datetime
-from evaluation.voice_call_client import VoiceCallClient
+from pathlib import Path
+from typing import Dict, List
+
 from azure.identity import DefaultAzureCredential
+from dotenv_azd import load_azd_env
+from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
+                              text_to_speech_pcm)
+from evaluation.voice_call_client import VoiceCallClient
 from openai import AsyncAzureOpenAI
-from dotenv import load_dotenv
-from evaluation.utils import ( 
-    text_to_speech_pcm, 
-    speech_to_text_pcm, 
-    ask_proxy_human
-)
 
-load_dotenv()
+# Load environment variables from azd .env file
+load_azd_env()
 
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_CHAT_DEPLOYMENT_TEXT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT")
-AZURE_TTS_DEPLOYMENT = os.getenv("AZURE_OPENAI_TTS_DEPLOYMENT")
+AZURE_AI_SERVICES_ENDPOINT = os.getenv("AZURE_AI_SERVICES_ENDPOINT")
+AZURE_CHAT_DEPLOYMENT_TEXT = os.getenv("AZURE_CHAT_MODEL_DEPLOYMENT_NAME")
+AZURE_TTS_DEPLOYMENT = os.getenv("AZURE_TTS_MODEL_DEPLOYMENT_NAME")
+
+if not AZURE_AI_SERVICES_ENDPOINT:
+    raise ValueError("AZURE_AI_SERVICES_ENDPOINT environment variable is not set.")
+
+if not AZURE_CHAT_DEPLOYMENT_TEXT:
+    raise ValueError("AZURE_CHAT_MODEL_DEPLOYMENT_NAME environment variable is not set.")
+
+if not AZURE_TTS_DEPLOYMENT:
+    raise ValueError("AZURE_TTS_MODEL_DEPLOYMENT_NAME environment variable is not set.")
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
@@ -31,7 +39,7 @@ tokenProvider = get_bearer_token_provider(
 
 
 aoai_client = AsyncAzureOpenAI(
-    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    azure_endpoint=AZURE_AI_SERVICES_ENDPOINT,
     azure_ad_token_provider=tokenProvider,
     api_version="2024-02-15-preview",
 )
@@ -118,7 +126,7 @@ class ConversationState:
 
 async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
     audio = bytearray()
-    async for pcm_chunk in text_to_speech_pcm(aoai_client, text):
+    async for pcm_chunk in text_to_speech_pcm(aoai_client, AZURE_TTS_DEPLOYMENT, text):
         audio.extend(pcm_chunk)
         await harness.send_audio_chunk(pcm_chunk)
     
@@ -185,7 +193,7 @@ class ProxyHumanScenario(TestScenario):
             
             # Get proxy human response
             print("\nGenerating customer response...")
-            customer_response = await ask_proxy_human(aoai_client, state.history, self.system_prompt)
+            customer_response = await ask_proxy_human(aoai_client, AZURE_CHAT_DEPLOYMENT_TEXT, state.history, self.system_prompt)
             print(f"Customer: {customer_response}")
             
             # Check if conversation should end

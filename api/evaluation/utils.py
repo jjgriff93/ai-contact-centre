@@ -1,15 +1,9 @@
 import io
 import os
-from openai import AsyncAzureOpenAI
 import wave
 from typing import List
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-AZURE_CHAT_DEPLOYMENT_TEXT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT")
-AZURE_TTS_DEPLOYMENT = os.getenv("AZURE_OPENAI_TTS_DEPLOYMENT")
+from openai import AsyncAzureOpenAI
 
 
 async def speech_to_text_pcm(client: AsyncAzureOpenAI, audio_data: bytes) -> str:
@@ -34,14 +28,14 @@ async def speech_to_text_pcm(client: AsyncAzureOpenAI, audio_data: bytes) -> str
     return response.strip() if response else ""
 
 
-async def text_to_speech_pcm(client: AsyncAzureOpenAI, text: str, chunk_size: int = 100):
+async def text_to_speech_pcm(client: AsyncAzureOpenAI, model: str, text: str, chunk_size: int = 100):
     """Convert text to PCM audio chunks."""
     
     bytes_per_chunk = 9600 #PCM_RATE * 2 * chunk_size // 1000  # 16-bit PCM
     buffer = b""
     
     async with client.audio.speech.with_streaming_response.create(
-        model=AZURE_TTS_DEPLOYMENT,
+        model=model,
         voice="fable",
         input=text,
         response_format="pcm"  # Raw 16-bit PCM
@@ -55,7 +49,7 @@ async def text_to_speech_pcm(client: AsyncAzureOpenAI, text: str, chunk_size: in
             yield buffer
 
 
-async def ask_proxy_human(client: AsyncAzureOpenAI, history: List, system_message:str = None) -> str:
+async def ask_proxy_human(client: AsyncAzureOpenAI, model: str, history: List, system_message:str = None) -> str:
     """Generate next user utterance using Azure OpenAI."""
     
     proxy_system = system_message or (
@@ -82,7 +76,7 @@ async def ask_proxy_human(client: AsyncAzureOpenAI, history: List, system_messag
     ]
     
     response = await client.chat.completions.create(
-        model=AZURE_CHAT_DEPLOYMENT_TEXT,
+        model=model,
         messages=messages,
         temperature=0.7,
         max_tokens=64,

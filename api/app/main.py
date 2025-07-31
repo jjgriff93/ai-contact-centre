@@ -16,7 +16,7 @@ from azure.communication.callautomation.aio import CallAutomationClient
 from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv_azd import AzdCommandNotFoundError, load_azd_env
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, WebSocket
 from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings

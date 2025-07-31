@@ -16,3 +16,7 @@ tasks:
     dir: api
     cmds:
       - uv run fastapi dev
+  test:
+    dir: api
+    cmds:
+      - uv run python -m evaluation.conversation_test_runner
