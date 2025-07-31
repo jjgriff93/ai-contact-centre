@@ -126,7 +126,7 @@ module api 'br/public:avm/res/app/container-app:0.8.0' = {
     }
     containers: [
       {
-        image: apiFetchLatestImage.outputs.containers[0].image
+        image: apiFetchLatestImage.outputs.?containers[?0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
         name: 'main'
         resources: {
           cpu: json('0.5')

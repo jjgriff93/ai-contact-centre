@@ -26,20 +26,23 @@ param apiExists bool
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Tags that will be applied to all resources')
+param tags object = {}
+
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
 // Example usage:
 //   tags: union(tags, { 'azd-service-name': <service name in azure.yaml> })
-var tags = {
+var commonTags = union(tags, {
   'azd-env-name': environmentName
-}
+})
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${environmentName}'
   location: location
-  tags: tags
+  tags: commonTags
 }
 
 module resources 'modules/container.bicep' = {
@@ -47,7 +50,7 @@ module resources 'modules/container.bicep' = {
   name: 'resources'
   params: {
     location: location
-    tags: tags
+    tags: commonTags
     principalId: principalId
     apiExists: apiExists
     aiServicesEndpoint: aiModelsDeploy.outputs.AZURE_AI_SERVICES_ENDPOINT
@@ -60,7 +63,7 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
   scope: rg
   name: 'ai-project'
   params: {
-    tags: tags
+    tags: commonTags
     location: location
     envName: environmentName
     principalId: principalId
@@ -86,7 +89,7 @@ module acs 'modules/acs.bicep' = {
   name: 'acs'
   params: {
     location: location
-    tags: tags
+    tags: commonTags
   }
 }
 

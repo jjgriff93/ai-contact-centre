@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import uuid
 from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -47,6 +48,8 @@ except AzdCommandNotFoundError as e:
 
 settings = Settings() # type: ignore
 app = FastAPI()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Get credential for authentication to Azure services (from Azure CLI locally and Managed Identity in Azure Container Apps)
 credential = DefaultAzureCredential()
@@ -63,7 +66,7 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
 
     async def from_realtime_to_acs(audio: ndarray):
         """Function that forwards the audio from the model to the websocket of the ACS client."""
-        logging.debug("Audio received from the model, sending to ACS client")
+        logger.debug("Audio received from the model, sending to ACS client")
         await websocket.send_text(
             json.dumps(
                 {
@@ -78,14 +81,14 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
     async for event in client.receive(audio_output_callback=from_realtime_to_acs):
         match event.service_type:
             case ListenEvents.SESSION_CREATED:
-                logging.info("Session Created Message")
-                logging.debug(f"  Session Id: {event.service_event.session.id}")  # type: ignore
+                logger.info("Session Created Message")
+                logger.debug(f"  Session Id: {event.service_event.session.id}")  # type: ignore
             case ListenEvents.ERROR:
-                logging.error(f"  Error: {event.service_event.error}")  # type: ignore
+                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
             case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
-                logging.info("Input Audio Buffer Cleared Message")
+                logger.info("Input Audio Buffer Cleared Message")
             case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-                logging.debug(
+                logger.debug(
                     f"Voice activity detection started at {event.service_event.audio_start_ms} [ms]"  # type: ignore
                 )
                 await websocket.send_text(
@@ -94,18 +97,18 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                     )
                 )
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
-                logging.info(f" User:-- {event.service_event.transcript}")  # type: ignore
+                logger.info(f" User:-- {event.service_event.transcript}")  # type: ignore
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                logging.error(f"  Error: {event.service_event.error}")  # type: ignore
+                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
             case ListenEvents.RESPONSE_DONE:
-                logging.info("Response Done Message")
-                logging.debug(f"  Response Id: {event.service_event.response.id}")  # type: ignore
+                logger.info("Response Done Message")
+                logger.debug(f"  Response Id: {event.service_event.response.id}")  # type: ignore
                 if event.service_event.response.status_details:  # type: ignore
-                    logging.debug(
+                    logger.debug(
                         f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"  # type: ignore
                     )
             case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
-                logging.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
+                logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
 
 
 @app.websocket("/ws")
@@ -115,7 +118,7 @@ async def agent_connect(websocket: WebSocket):
     call_connection_id = websocket.headers.get("x-ms-call-connection-id")
 
     if not call_connection_id:
-        logging.error("No call connection ID provided in headers.")
+        logger.error("No call connection ID provided in headers.")
         await websocket.close(code=1008, reason="No call connection ID provided.")
         return
 
@@ -182,7 +185,7 @@ async def agent_connect(websocket: WebSocket):
                         )
                     )
             except Exception:
-                logging.info("Websocket connection closed.")
+                logger.info("Websocket connection closed.")
                 break
 
     # Create the realtime client session
@@ -197,33 +200,38 @@ async def agent_connect(websocket: WebSocket):
 
 
 @app.post("/api/incomingCall")
-async def incoming_call_handler(events: list[dict], request: Request):
+async def incoming_call_handler(events: list[dict]):
     """Handle incoming call events from Azure Communication Services."""
     # This should be set in env when running locally to devtunnel uri
     if not settings.AZURE_ACS_CALLBACK_HOST_URI:
-        logging.debug("AZURE_ACS_CALLBACK_HOST_URI is not set. Using host URI.")
-        callback_base_uri = str(request.base_url)
-    # When running in container app, this will be the request host uri
+        # When running in container app, this will be the request host uri
+        logger.debug("AZURE_ACS_CALLBACK_HOST_URI is not set. Using container hostname.")
+        container_app_hostname = os.environ.get("CONTAINER_APP_HOSTNAME")
+        if not container_app_hostname:
+            logger.error("CONTAINER_APP_HOSTNAME is not set. Cannot determine callback base URI.")
+            raise ValueError("AZURE_ACS_CALLBACK_HOST_URI or CONTAINER_APP_HOSTNAME environment variable is required.")
+        callback_base_uri = "https://" + container_app_hostname
     else:
         callback_base_uri = settings.AZURE_ACS_CALLBACK_HOST_URI
 
     callback_events_uri = f"{callback_base_uri}/api/callbacks"
+    logger.info(f"Call event received. Using callback events URI: {callback_events_uri}")
     for event_dict in events:
         event = EventGridEvent.from_dict(event_dict)
         match event.event_type:
             case SystemEventNames.EventGridSubscriptionValidationEventName:
-                logging.info("Validating subscription")
+                logger.info("Validating subscription")
                 validation_code = event.data["validationCode"]
                 validation_response = {"validationResponse": validation_code}
                 return validation_response
             case SystemEventNames.AcsIncomingCallEventName:
-                logging.debug("Incoming call received: data=%s", event.data)
+                logger.debug("Incoming call received: data=%s", event.data)
                 caller_id = (
                     event.data["from"]["phoneNumber"]["value"]
                     if event.data["from"]["kind"] == "phoneNumber"
                     else event.data["from"]["rawId"]
                 )
-                logging.info("incoming call handler caller id: %s", caller_id)
+                logger.info("incoming call handler caller id: %s", caller_id)
                 incoming_call_context = event.data["incomingCallContext"]
                 guid = uuid.uuid4()
                 query_parameters = urlencode({"callerId": caller_id})
@@ -232,8 +240,8 @@ async def incoming_call_handler(events: list[dict], request: Request):
                 parsed_url = urlparse(callback_events_uri)
                 websocket_url = urlunparse(("wss", parsed_url.netloc, "/ws", "", "", ""))
 
-                logging.debug("callback url: %s", callback_uri)
-                logging.debug("websocket url: %s", websocket_url)
+                logger.debug("callback url: %s", callback_uri)
+                logger.debug("websocket url: %s", websocket_url)
 
                 answer_call_result = await acs_client.answer_call(
                     incoming_call_context=incoming_call_context,
@@ -249,10 +257,10 @@ async def incoming_call_handler(events: list[dict], request: Request):
                         audio_format=AudioFormat.PCM24_K_MONO,
                     ),
                 )
-                logging.info(f"Answered call for connection id: {answer_call_result.call_connection_id}")
+                logger.info(f"Answered call for connection id: {answer_call_result.call_connection_id}")
             case _:
-                logging.debug("Event type not handled: %s", event.event_type)
-                logging.debug("Event data: %s", event.data)
+                logger.debug("Event type not handled: %s", event.event_type)
+                logger.debug("Event data: %s", event.data)
 
 
 @app.post("/api/callbacks/{contextId}")
@@ -261,7 +269,7 @@ async def callbacks(contextId: str, events: list[dict]):
         # Parsing callback events
         event_data = event["data"]
         call_connection_id = event_data["callConnectionId"]
-        logging.debug(
+        logger.debug(
             f"Received Event:-> {event['type']}, Correlation Id:-> {event_data['correlationId']}, ContextId:-> {contextId}, CallConnectionId:-> {call_connection_id}"
         )
         match event["type"]:
@@ -270,30 +278,30 @@ async def callbacks(contextId: str, events: list[dict]):
                     call_connection_id
                 ).get_call_properties()
                 media_streaming_subscription = call_connection_properties.media_streaming_subscription
-                logging.info(f"MediaStreamingSubscription:--> {media_streaming_subscription}")
-                logging.info(f"Received CallConnected event for connection id: {call_connection_id}")
-                logging.debug("CORRELATION ID:--> %s", event_data["correlationId"])
-                logging.debug("CALL CONNECTION ID:--> %s", event_data["callConnectionId"])
+                logger.info(f"MediaStreamingSubscription:--> {media_streaming_subscription}")
+                logger.info(f"Received CallConnected event for connection id: {call_connection_id}")
+                logger.debug("CORRELATION ID:--> %s", event_data["correlationId"])
+                logger.debug("CALL CONNECTION ID:--> %s", event_data["callConnectionId"])
             case "Microsoft.Communication.MediaStreamingStarted" | "Microsoft.Communication.MediaStreamingStopped":
-                logging.debug(
+                logger.debug(
                     f"Media streaming content type:--> {event_data['mediaStreamingUpdate']['contentType']}"
                 )
-                logging.debug(
+                logger.debug(
                     f"Media streaming status:--> {event_data['mediaStreamingUpdate']['mediaStreamingStatus']}"
                 )
-                logging.debug(
+                logger.debug(
                     f"Media streaming status details:--> {event_data['mediaStreamingUpdate']['mediaStreamingStatusDetails']}"  # noqa: E501
                 )
             case "Microsoft.Communication.MediaStreamingFailed":
-                logging.warning(
+                logger.warning(
                     f"Code:->{event_data['resultInformation']['code']}, Subcode:-> {event_data['resultInformation']['subCode']}"  # noqa: E501
                 )
-                logging.warning(f"Message:->{event_data['resultInformation']['message']}")
+                logger.warning(f"Message:->{event_data['resultInformation']['message']}")
             case "Microsoft.Communication.CallDisconnected":
-                logging.debug(f"Call disconnected for connection id: {call_connection_id}")
+                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
             case "Microsoft.Communication.CallDisconnected":
-                logging.debug(f"Call disconnected for connection id: {call_connection_id}")
-                logging.debug(f"Call disconnected for connection id: {call_connection_id}")
+                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
+                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
 
 if __name__ == "__main__":
     import uvicorn
