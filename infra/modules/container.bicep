@@ -5,12 +5,18 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param apiExists bool
-param aiFoundryProjectEndpoint string
+param aiServicesEndpoint string
 
 @description('Id of the user or app to assign application roles')
 param principalId string
 
-var abbrs = loadJsonContent('./abbreviations.json')
+@description('Name of the Azure Communication Service')
+param communicationServiceName string
+
+@description('Name of the Event Grid System Topic for ACS')
+param eventGridSystemTopicName string
+
+var abbrs = loadJsonContent('../abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
 // Monitor application with Azure Monitor
@@ -96,19 +102,23 @@ module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
     location: location
   }
 }
-module apiFetchLatestImage './modules/fetch-container-image.bicep' = {
+
+module apiFetchLatestImage 'fetch-container-image.bicep' = {
   name: 'api-fetch-image'
   params: {
     exists: apiExists
-    name: 'api'
+    name: 'api-${resourceToken}'
   }
+}
+
+resource acs 'Microsoft.Communication/communicationServices@2023-04-01' existing = {
+  name: communicationServiceName
 }
 
 module api 'br/public:avm/res/app/container-app:0.8.0' = {
   name: 'api'
   params: {
-    name: 'api'
-    ingressTargetPort: 8000
+    name: 'api-${resourceToken}'
     scaleMinReplicas: 1
     scaleMaxReplicas: 10
     secrets: {
@@ -132,12 +142,12 @@ module api 'br/public:avm/res/app/container-app:0.8.0' = {
             value: apiIdentity.outputs.clientId
           }
           {
-            name: 'AZURE_AI_PROJECT_ENDPOINT'
-            value: aiFoundryProjectEndpoint
+            name: 'AZURE_AI_SERVICES_ENDPOINT'
+            value: aiServicesEndpoint
           }
           {
-            name: 'PORT'
-            value: '8000'
+            name: 'AZURE_ACS_ENDPOINT'
+            value: acs.properties.hostName
           }
         ]
       }
@@ -157,6 +167,30 @@ module api 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': 'api' })
   }
 }
+
+resource eventGridSystemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' existing = {
+  name: eventGridSystemTopicName
+}
+
+// Event Grid Subscription for Call Events
+// TODO: this currently doesn't work due to requiring running api during validation handshake
+// resource eventGridSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2022-06-15' = {
+//   name: 'call-events'
+//   parent: eventGridSystemTopic
+//   properties: {
+//     destination: {
+//       endpointType: 'WebHook'
+//       properties: {
+//         endpointUrl: 'https://${api.outputs.fqdn}/api/incomingCall'
+//       }
+//     }
+//     filter: {
+//       includedEventTypes: [
+//         'Microsoft.Communication.IncomingCall'
+//       ]
+//     }
+//   }
+// }
 
 resource apibackendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
   name: guid(subscription().id, resourceGroup().id, apiIdentity.name, '64702f94-c441-49e6-a78b-ef80e0188fee')
@@ -184,6 +218,20 @@ resource apibackendRoleCognitiveServicesUserRG 'Microsoft.Authorization/roleAssi
   }
 }
 
+resource apibackendRoleCommunicationServiceContributor 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, acs.id, apiIdentity.name, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  scope: acs
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    )
+    principalId: apiIdentity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_RESOURCE_API_ID string = api.outputs.resourceId
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
+output AZURE_CONTAINER_APP_URI string = api.outputs.fqdn

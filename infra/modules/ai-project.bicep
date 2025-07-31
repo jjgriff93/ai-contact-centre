@@ -36,10 +36,10 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: false
   }
-  
+
   @batchSize(1)
   resource seqDeployments 'deployments' = [
-    for dep in (deployments??[]): {
+    for dep in (deployments ?? []): {
       name: dep.name
       properties: {
         model: dep.model
@@ -85,6 +85,7 @@ resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/r
 }
 
 output ENDPOINT string = aiAccount::project.properties.endpoints['AI Foundry API']
+output AZURE_AI_SERVICES_ENDPOINT string = 'https://${aiAccount.name}.cognitiveservices.azure.com/'
 output projectId string = aiAccount::project.id
 output aiServicesAccountName string = aiAccount.name
 output aiServicesProjectName string = aiAccount::project.name
@@ -114,4 +115,3 @@ type deploymentsType = {
     capacity: int
   }
 }[]?
-
