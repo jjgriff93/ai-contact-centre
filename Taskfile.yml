@@ -3,16 +3,26 @@
 version: '3'
 
 tasks:
-  devtunnel:create:
+  setup:infra:
+    cmds:
+      - azd auth login
+      - azd up
+  setup:devtunnel:
     cmds:
       - |
         devtunnel login
         devtunnel create aicontactcentre --allow-anonymous
         devtunnel port create -p 8000
-  devtunnel:host:
+  run:devtunnel:
     cmds:
       - devtunnel host aicontactcentre
-  api:
+  run:api:
     dir: api
     cmds:
       - uv run fastapi dev
+  run:
+    deps: [run:devtunnel, run:api]
+  test:
+    dir: api
+    cmds:
+      - uv run python -m evaluation.conversation_test_runner

@@ -15,16 +15,10 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 
 ### 2. Deploy resources
 
-First authenticate with Azure using the Azure Developer CLI:
+Run the following command to deploy the Azure resources defined in the `infra` folder (you'll be prompted to authenticate with Azure):
 
 ```bash
-azd auth login
-```
-
-Then you can deploy the resources by running the following command:
-
-```bash
-azd up
+task setup:infra
 ```
 
 This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and deploy the packaged `api` to the Azure Container Apps environment.
@@ -40,13 +34,13 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
 - Create a [devtunnel](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview):
 
   ```bash
-  task devtunnel:create
+  task setup:devtunnel
   ```
 
 - Host the devtunnel:
 
   ```bash
-  task devtunnel:host
+  task run:devtunnel
   ```
 
   Copy the webtunnel URL from the output.
@@ -62,7 +56,7 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
 - Run the API:
 
   ```bash
-  task api
+  task run:api
   ```
 
 - Configure an Event Grid subscription for ACS to send events to your API by following [these instructions](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/incoming-call-notification), selecting Webhook for endpoint type, and supplying your devtunnel URL with the suffix `/api/incomingCall`.
@@ -70,12 +64,10 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
 
 #### Each time
 
-> Make sure your devtunnel is running in a terminal window. If not, start it with `task devtunnel:host`.
-
-- Run the API:
+- For convenience, you can run the following command to start the devtunnel and API in one go:
 
   ```bash
-  task api
+  task run
   ```
 
 - Call the number you created in ACS to test the API is working. You should hear a greeting and be able to speak to the AI agent.

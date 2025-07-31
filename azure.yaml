@@ -30,3 +30,24 @@ resources:
           name: GlobalStandard
           usageName: OpenAI.GlobalStandard.gpt-4o-realtime-preview
           capacity: 5
+      - name: gpt-4o-mini-transcribe
+        version: "2025-03-20"
+        format: OpenAI
+        sku:
+          name: GlobalStandard
+          usageName: OpenAI.GlobalStandard.gpt-4o-mini-transcribe
+          capacity: 10
+      - name: gpt-4o-mini-tts
+        version: "2025-03-20"
+        format: OpenAI
+        sku:
+          name: GlobalStandard
+          usageName: OpenAI.GlobalStandard.gpt-4o-mini-tts
+          capacity: 10
+      - name: gpt-4.1
+        version: "2025-04-14"
+        format: OpenAI
+        sku:
+          name: GlobalStandard
+          usageName: OpenAI.GlobalStandard.gpt-4.1
+          capacity: 10

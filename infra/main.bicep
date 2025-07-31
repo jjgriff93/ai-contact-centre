@@ -18,6 +18,9 @@ param location string
     type: 'location'
     usageName: [
       'OpenAI.GlobalStandard.gpt-4o-realtime-preview,5'
+      'OpenAI.GlobalStandard.gpt-4o-mini-transcribe,100'
+      'OpenAI.GlobalStandard.gpt-4o-mini-tts,100'
+      'OpenAI.GlobalStandard.gpt-4.1,150'
     ]
   }
 })
@@ -69,7 +72,7 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
     principalId: principalId
     deployments: [
       {
-        name: 'gpt4oRealtimePreviewDeployment'
+        name: 'gpt-4o-realtime-preview'
         model: {
           name: 'gpt-4o-realtime-preview'
           format: 'OpenAI'
@@ -78,6 +81,42 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
         sku: {
           name: 'GlobalStandard'
           capacity: 5
+        }
+      }
+      {
+        name: 'gpt-4o-mini-transcribe'
+        model: {
+          name: 'gpt-4o-mini-transcribe'
+          format: 'OpenAI'
+          version: '2025-03-20'
+        }
+        sku: {
+          name: 'GlobalStandard'
+          capacity: 100
+        }
+      }
+      {
+        name: 'tts' // gpt-4o-mini-tts not currently available in Sweden Central
+        model: {
+          name: 'tts'
+          format: 'OpenAI'
+          version: '001'
+        }
+        sku: {
+          name: 'Standard'
+          capacity: 3
+        }
+      }
+      {
+        name: 'gpt-4.1'
+        model: {
+          name: 'gpt-4.1'
+          format: 'OpenAI'
+          version: '2025-04-14'
+        }
+        sku: {
+          name: 'GlobalStandard'
+          capacity: 150
         }
       }
     ]

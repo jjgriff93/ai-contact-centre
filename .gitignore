@@ -12,3 +12,6 @@ wheels/
 .env
 .DS_Store
 .azure
+
+# Test artifacts
+test_outputs/
