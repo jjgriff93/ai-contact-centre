@@ -9,19 +9,19 @@ The `conversation_test_runner.py` script is designed to simulate and test conver
 
 ### Run the test/conversation code
 
-First, ensure you're logged into Azure either via `azd auth login` or `az login` so that the authentication works on the OpenAI endpoints.
-
-Then, start the API server in a terminal window:
+First, start the API server and devtunnel in a terminal window:
 
 ```bash
-task api
+task run
 ```
 
-Finally, run the test runner in another terminal window:
+Then, run the test runner in another terminal window:
 
 ```bash
 task test
 ```
+
+> Make sure you're still logged into Azure either via `azd auth login` or `az login` so that the authentication works on the OpenAI endpoints, otherwise you may see an authentication error.
 
 ### 5. Check the test_outputs folder for generated audio and the transcript in json
 

@@ -28,14 +28,14 @@ async def speech_to_text_pcm(client: AsyncAzureOpenAI, audio_data: bytes) -> str
     return response.strip() if response else ""
 
 
-async def text_to_speech_pcm(client: AsyncAzureOpenAI, model: str, text: str, chunk_size: int = 100):
+async def text_to_speech_pcm(client: AsyncAzureOpenAI, text: str, chunk_size: int = 100):
     """Convert text to PCM audio chunks."""
     
     bytes_per_chunk = 9600 #PCM_RATE * 2 * chunk_size // 1000  # 16-bit PCM
     buffer = b""
     
     async with client.audio.speech.with_streaming_response.create(
-        model=model,
+        model="tts",
         voice="fable",
         input=text,
         response_format="pcm"  # Raw 16-bit PCM
@@ -49,7 +49,7 @@ async def text_to_speech_pcm(client: AsyncAzureOpenAI, model: str, text: str, ch
             yield buffer
 
 
-async def ask_proxy_human(client: AsyncAzureOpenAI, model: str, history: List, system_message:str = None) -> str:
+async def ask_proxy_human(client: AsyncAzureOpenAI, history: List, system_message:str = None) -> str:
     """Generate next user utterance using Azure OpenAI."""
     
     proxy_system = system_message or (
@@ -76,7 +76,7 @@ async def ask_proxy_human(client: AsyncAzureOpenAI, model: str, history: List, s
     ]
     
     response = await client.chat.completions.create(
-        model=model,
+        model="gpt-4.1",
         messages=messages,
         temperature=0.7,
         max_tokens=64,

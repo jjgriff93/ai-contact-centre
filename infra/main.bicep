@@ -72,7 +72,7 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
     principalId: principalId
     deployments: [
       {
-        name: 'gpt4oRealtimePreviewDeployment'
+        name: 'gpt-4o-realtime-preview'
         model: {
           name: 'gpt-4o-realtime-preview'
           format: 'OpenAI'
@@ -84,7 +84,7 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
         }
       }
       {
-        name: 'gpt4oMiniTranscribeDeployment'
+        name: 'gpt-4o-mini-transcribe'
         model: {
           name: 'gpt-4o-mini-transcribe'
           format: 'OpenAI'
@@ -95,21 +95,20 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
           capacity: 100
         }
       }
-      // Currently not availale in Sweden Central, deploy manually for now
-      // {
-      //   name: 'gpt4oMiniTTSDeployment'
-      //   model: {
-      //     name: 'gpt-4o-mini-tts'
-      //     format: 'OpenAI'
-      //     version: '2025-03-20'
-      //   }
-      //   sku: {
-      //     name: 'GlobalStandard'
-      //     capacity: 100
-      //   }
-      // }
       {
-        name: 'gpt41Deployment'
+        name: 'tts' // gpt-4o-mini-tts not currently available in Sweden Central
+        model: {
+          name: 'tts'
+          format: 'OpenAI'
+          version: '001'
+        }
+        sku: {
+          name: 'Standard'
+          capacity: 3
+        }
+      }
+      {
+        name: 'gpt-4.1'
         model: {
           name: 'gpt-4.1'
           format: 'OpenAI'
@@ -143,6 +142,3 @@ output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_RESOURCE_API_ID string = resources.outputs.AZURE_RESOURCE_API_ID
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
-
-output AZURE_CHAT_MODEL_DEPLOYMENT_NAME string = 'gpt41Deployment'
-output AZURE_TTS_MODEL_DEPLOYMENT_NAME string = 'gpt4oMiniTTSDeployment'

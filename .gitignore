@@ -13,3 +13,5 @@ wheels/
 .DS_Store
 .azure
 
+# Test artifacts
+test_outputs/

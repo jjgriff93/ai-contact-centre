@@ -30,17 +30,9 @@ logger = logging.getLogger(__name__)
 load_azd_env()
 
 AZURE_AI_SERVICES_ENDPOINT = os.getenv("AZURE_AI_SERVICES_ENDPOINT")
-AZURE_CHAT_DEPLOYMENT_TEXT = os.getenv("AZURE_CHAT_MODEL_DEPLOYMENT_NAME")
-AZURE_TTS_DEPLOYMENT = os.getenv("AZURE_TTS_MODEL_DEPLOYMENT_NAME")
 
 if not AZURE_AI_SERVICES_ENDPOINT:
     raise ValueError("AZURE_AI_SERVICES_ENDPOINT environment variable is not set.")
-
-if not AZURE_CHAT_DEPLOYMENT_TEXT:
-    raise ValueError("AZURE_CHAT_MODEL_DEPLOYMENT_NAME environment variable is not set.")
-
-if not AZURE_TTS_DEPLOYMENT:
-    raise ValueError("AZURE_TTS_MODEL_DEPLOYMENT_NAME environment variable is not set.")
 
 # Audio constants (keep in one place)
 SAMPLE_RATE_HZ = 24_000
@@ -151,7 +143,7 @@ async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
     start_time = time.time()
     
     audio = bytearray()
-    async for pcm_chunk in text_to_speech_pcm(aoai_client, AZURE_TTS_DEPLOYMENT, text):
+    async for pcm_chunk in text_to_speech_pcm(aoai_client, text):
         audio.extend(pcm_chunk)
         await harness.send_audio_chunk(pcm_chunk)
 
@@ -228,7 +220,7 @@ class ProxyHumanScenario(TestScenario):
             conversation_turns += 1
 
             logger.info("Generating customer response...")
-            customer_response = await ask_proxy_human(aoai_client, AZURE_CHAT_DEPLOYMENT_TEXT, state.history, self.system_prompt)
+            customer_response = await ask_proxy_human(aoai_client, state.history, self.system_prompt)
             logger.info("Customer: %s", customer_response)
 
             # Send response audio
