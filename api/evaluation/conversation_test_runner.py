@@ -3,16 +3,28 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Literal, Optional
 
-from azure.identity import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv_azd import load_azd_env
 from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
                               text_to_speech_pcm)
 from evaluation.voice_call_client import VoiceCallClient
 from openai import AsyncAzureOpenAI
+
+# -----------------------------------------------------------------------------
+# Configuration & logging
+# -----------------------------------------------------------------------------
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from azd .env file
 load_azd_env()
@@ -30,133 +42,151 @@ if not AZURE_CHAT_DEPLOYMENT_TEXT:
 if not AZURE_TTS_DEPLOYMENT:
     raise ValueError("AZURE_TTS_MODEL_DEPLOYMENT_NAME environment variable is not set.")
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+# Audio constants (keep in one place)
+SAMPLE_RATE_HZ = 24_000
+SAMPLE_WIDTH_BYTES = 2  # 16-bit
+CHANNELS = 1
 
-tokenProvider = get_bearer_token_provider(
-    DefaultAzureCredential(),
+# -----------------------------------------------------------------------------
+# Azure OpenAI client (consider dependency injection for testability)
+# -----------------------------------------------------------------------------
+token_provider = get_bearer_token_provider(
+    DefaultAzureCredential(exclude_managed_identity_credential=True),
     "https://cognitiveservices.azure.com/.default",
 )
 
-
 aoai_client = AsyncAzureOpenAI(
     azure_endpoint=AZURE_AI_SERVICES_ENDPOINT,
-    azure_ad_token_provider=tokenProvider,
+    azure_ad_token_provider=token_provider,
     api_version="2024-02-15-preview",
 )
 
+# -----------------------------------------------------------------------------
+# Types & state
+# -----------------------------------------------------------------------------
 
-async def wait_for_assistant_to_finish(harness: VoiceCallClient, timeout: float = 10.0):
-    """Wait for assistant to finish speaking with timeout detection."""
-    start_time = time.time()
-    initial_wait = True
+MessageRole = Literal["assistant", "user"]
+
+
+@dataclass
+class AudioState:
+    """
+    Collects raw audio from both sides for later export or analysis.
+    """
+    assistant_chunks: List[bytes] = field(default_factory=list)
+    proxy_chunks: List[bytes] = field(default_factory=list)
+    combined_chunks: List[bytes] = field(default_factory=list)
+
+    def add_assistant(self, data: bytes) -> None:
+        self.assistant_chunks.append(data)
+        self.combined_chunks.append(data)
+
+    def add_proxy(self, data: bytes) -> None:
+        self.proxy_chunks.append(data)
+        self.combined_chunks.append(data)
+
+
+@dataclass
+class TurnTiming:
+    """Tracks timing information for a single turn."""
+    role: MessageRole
+    start_time: float
+    end_time: float
+    duration: float
+    content: str
     
-    THRESHOLD = 4.0  # seconds of silence to consider assistant finished
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "role": self.role,
+            "start_time": self.start_time,
+            "start_datetime": datetime.fromtimestamp(self.start_time).isoformat(timespec="milliseconds"),
+            "end_time": self.end_time,
+            "end_datetime": datetime.fromtimestamp(self.end_time).isoformat(timespec="milliseconds"),
+            "duration_seconds": self.duration,
+            "content": self.content
+        }
+    
 
-    while True:
-        current_time = time.time()
-        
-        # Once we receive any audio, we're no longer in initial wait
-        if harness.last_audio_received_time and harness.last_audio_received_time > start_time:
-            initial_wait = False
-
-        # Check if we haven't received audio for a while
-        if harness.last_audio_received_time and not initial_wait:
-            time_since_audio = current_time - harness.last_audio_received_time
-            if time_since_audio >= THRESHOLD:  # 2 seconds of no audio
-                # Save assistant audio when silence is detected
-                if harness.current_assistant_audio:
-                    harness.conversation_segments.append(
-                        ("assistant", bytes(harness.current_assistant_audio), time.time())
-                    )
-                    print(f"Saved assistant turn: {len(harness.current_assistant_audio)} bytes")
-                    harness.current_assistant_audio = bytearray()
-                    harness.is_assistant_speaking = False
-                print(f"Assistant finished (silent for {time_since_audio:.1f}s)")
-                break
-                
-        # Overall timeout
-        if current_time - start_time >= timeout:
-            print("Timeout waiting for assistant")
-            # Save any pending audio
-            if harness.current_assistant_audio:
-                harness.conversation_segments.append(
-                    ("assistant", bytes(harness.current_assistant_audio), time.time())
-                )
-                print(f"Saved assistant turn on timeout: {len(harness.current_assistant_audio)} bytes")
-                harness.current_assistant_audio = bytearray()
-            break
-            
-        await asyncio.sleep(0.1)
-
-
-
+@dataclass
 class ConversationState:
-    """Manages conversation state between proxy human and backend."""
-    
-    def __init__(self):
-        self.history: List[Dict[str, str]] = []
-        self.assistant_audio_chunks: List[bytes] = []
-        self.proxy_audio_chunks: List[bytes] = []
-        self.combined_audio_chunks: List[bytes] = []
-        self.last_activity = time.time()
-        self.current_transcript = ""
-        
-    def append_message(self, role: str, content: str, timestamp: float = None):
-        ts = time.time()
-        dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S.%f")
-        last_activity_datetime = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S.%f")
-        self.history.append({"role": role, "content": content, "timestamp": time.time(), "datetime": dt, "last_activity": last_activity_datetime})
-        
-    def add_assistant_audio(self, audio_data: str):
-        self.assistant_audio_chunks.append(audio_data)
-        self.combined_audio_chunks.append(audio_data)
-    
-    def add_proxy_audio(self, audio_data: str):
-        self.proxy_audio_chunks.append(audio_data)
-        self.combined_audio_chunks.append(audio_data)
-        
-    def update_activity(self):
-        self.last_activity = time.time()
-        
-    @property
-    def timed_out(self) -> bool:
-        return time.time() - self.last_activity > 10
+    """
+    Holds transcript/history and last-activity tracking for the test run.
+    Raw audio is delegated to AudioState.
+    """
+    history: List[Dict[str, object]] = field(default_factory=list)
+    last_activity_ts: float = field(default_factory=time.time)
+    audio: AudioState = field(default_factory=AudioState)
+    turn_timings: List[TurnTiming] = field(default_factory=list)  # Add this
 
+    def append_message(self, role: MessageRole, content: str, activity_ts: Optional[float] = None, 
+                      start_time: Optional[float] = None, end_time: Optional[float] = None) -> None:
+
+        now = time.time()
+        entry = {
+            "role": role,
+            "content": content,
+            "datetime": datetime.fromtimestamp(now).isoformat(timespec="milliseconds"),
+            "activity_datetime": (
+                datetime.fromtimestamp(activity_ts).isoformat(timespec="milliseconds") if activity_ts else None
+            ),
+            "start_datetime": datetime.fromtimestamp(start_time).isoformat(timespec="milliseconds") if start_time else None,
+            "end_datetime": datetime.fromtimestamp(end_time).isoformat(timespec="milliseconds") if end_time else None,
+            "duration_seconds": (end_time - start_time) if start_time and end_time else None
+   
+        }
+        self.history.append(entry)
+        self.last_activity_ts = now
+
+    def timed_out(self, threshold_seconds: float = 10.0) -> bool:
+        return (time.time() - self.last_activity_ts) > threshold_seconds
 
 
 async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
+    """
+    TTS the provided text and stream PCM chunks to the server via the harness.
+    A short silence tail is appended to reliably trigger VAD on the server.
+    Returns the PCM bytes that were sent (including trailing silence).
+    """
+
+    start_time = time.time()
+    
     audio = bytearray()
     async for pcm_chunk in text_to_speech_pcm(aoai_client, AZURE_TTS_DEPLOYMENT, text):
         audio.extend(pcm_chunk)
         await harness.send_audio_chunk(pcm_chunk)
-    
-    # Send silence to trigger VAD
-    post_silence = b'\x00' * (24000 * 2)  # 1 second of silence, 24KHz (24000 samples), 16-bit mono (2 bytes per sample)
+
+    silence_ms = 1000
+    silence_frames = int((SAMPLE_RATE_HZ * silence_ms) / 1000)
+    post_silence = b"\x00" * (silence_frames * SAMPLE_WIDTH_BYTES)
     audio.extend(post_silence)
     await harness.send_audio_chunk(post_silence)
 
-    return audio
+    end_time = time.time()
+
+    logger.debug("Sent TTS audio (%d bytes) + %dms silence.", len(audio) - len(post_silence), silence_ms)
+
+    return bytes(audio), start_time, end_time
 
 
 class TestScenario:
     """Base class for test scenarios."""
-    
-    def __init__(self, name: str, description: str):
+
+    def __init__(self, name: str, description: str) -> None:
         self.name = name
         self.description = description
-        
-    async def run(self, harness: VoiceCallClient):
+
+    async def run(self, harness: VoiceCallClient, state: ConversationState) -> None:
         """Run the test scenario."""
         raise NotImplementedError
-        
+
 
 class ProxyHumanScenario(TestScenario):
     """Test scenario for proxy human interaction."""
 
-    def __init__(self, system_prompt: str = None):
+    def __init__(self, system_prompt: Optional[str] = None) -> None:
         super().__init__(
             "Proxy Human Interaction",
-            "Agent simulates a human customer interacting with the voice AI system."
+            "Agent simulates a human customer interacting with the voice AI system.",
         )
         self.system_prompt = system_prompt or (
             "You are a grocery shopper talking on the phone to a customer support agent. "
@@ -165,125 +195,161 @@ class ProxyHumanScenario(TestScenario):
             "be very short. When you are done say 'goodbye'. "
             "Your address is 21 Baker Street, London but only say it when asked."
         )
-    
-    async def run(self, harness: VoiceCallClient, state: ConversationState):
 
+    async def run(self, harness: VoiceCallClient, state: ConversationState) -> None:
         EXIT_TERMS = {"exit", "goodbye", "bye", "quit", "stop"}
 
-        # Wait for greeting and transcribe it
-        print("⏳ Waiting for assistant greeting...")
-        await wait_for_assistant_to_finish(harness)
+        logger.info("Waiting for assistant greeting...")
+        assistant_start_time = time.time()
+        await harness.wait_for_assistant_to_start_speaking(timeout_seconds=10)
+        await harness.wait_for_assistant_turn_end()
+        assistant_end_time = time.time()
+        logger.info("Assistant greeting received.")
+
+        # Transcribe latest assistant segment, if available
+        last_assistant = next(
+            (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
+            None,
+        )
+        if last_assistant:
+            assistant_audio = last_assistant[1]
+            assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
+            logger.info("Start ==== Assistant: %s", assistant_text)
+            state.audio.add_assistant(assistant_audio)
+            state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
+                            start_time=harness.current_assistant_turn_started_at or assistant_start_time,
+                            end_time=assistant_end_time)
         
-        # Transcribe assistant's greeting
-        if harness.conversation_segments:
-            # Get the last assistant segment
-            last_segment = harness.conversation_segments[-1]
-            if last_segment[0] == "assistant":
-                assistant_text = await speech_to_text_pcm(aoai_client, last_segment[1])
-                print(f"🤖 Assistant: {assistant_text}")
-                state.add_assistant_audio(last_segment[1])
-                state.append_message("assistant", assistant_text, harness.last_assistant_activity_time)
-        
-        # Continue conversation until goodbye
+        # Conversation loop
         conversation_turns = 0
-        max_turns = 8  # Prevent infinite loops
-        
+        max_turns = 8  # prevent infinite loops
+
         while conversation_turns < max_turns:
             conversation_turns += 1
-            
-            # Get proxy human response
-            print("\nGenerating customer response...")
-            customer_response = await ask_proxy_human(aoai_client, AZURE_CHAT_DEPLOYMENT_TEXT, state.history, self.system_prompt)
-            print(f"Customer: {customer_response}")
-            
-            # Check if conversation should end
-            if any(term in customer_response.lower() for term in EXIT_TERMS):
-                print("Customer said goodbye, ending conversation")
 
-                # Send the goodbye message
-                customer_audio = await send_text_to_server(harness, customer_response)
-                state.add_proxy_audio(customer_audio)
-                harness.add_customer_audio(bytes(customer_audio))
-                state.append_message("user", customer_response, time.time())
+            logger.info("Generating customer response...")
+            customer_response = await ask_proxy_human(aoai_client, AZURE_CHAT_DEPLOYMENT_TEXT, state.history, self.system_prompt)
+            logger.info("Customer: %s", customer_response)
+
+            # Send response audio
+            customer_audio, customer_start_time, customer_end_time = await send_text_to_server(harness, customer_response)
+            harness.add_customer_audio(customer_audio)
+            state.audio.add_proxy(customer_audio)
+            state.append_message("user", customer_response, time.time(), 
+                            start_time=customer_start_time,
+                            end_time=customer_end_time)
+            
+            # Exit condition
+            if any(term in customer_response.lower() for term in EXIT_TERMS):
+                logger.info("Customer said goodbye; ending conversation.")
                 break
+
+            # Await and transcribe assistant reply
+            assistant_start_time = time.time()
+
+            await harness.wait_for_assistant_turn_end()
+
+            assistant_end_time = time.time()
+
+            last_assistant = next(
+                (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
+                None,
+            )
+            if last_assistant:
+                assistant_audio = last_assistant[1]
+                assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
+                logger.info("Assistant: %s", assistant_text)
+                state.audio.add_assistant(assistant_audio)
+                state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
+                                    start_time=harness.current_assistant_turn_started_at or assistant_start_time,
+                                    end_time=assistant_end_time)
+
+        logger.info("Conversation completed after %d turns.", conversation_turns)
+
+        # Summary with timing information
+        logger.info("Conversation Summary with Timing:")
+        for timing in state.turn_timings:
+            role = "Customer" if timing.role == "user" else "Assistant"
+            logger.info("%s | %s | Duration: %.2fs | %s", 
+                    datetime.fromtimestamp(timing.start_time).strftime("%H:%M:%S.%f")[:-3],
+                    role, 
+                    timing.duration,
+                    timing.content)
+
+        self.output_transcript(state)
             
-            # Convert customer response to speech and send
-            customer_audio = await send_text_to_server(harness, customer_response)            
-            # Save customer audio and update state
-            harness.add_customer_audio(bytes(customer_audio))
-            state.add_proxy_audio(customer_audio)
-            state.append_message("user", customer_response, time.time())
-            
-            # Wait for assistant response
-            await wait_for_assistant_to_finish(harness)
-            
-            # Transcribe assistant's response
-            if len(harness.conversation_segments) > conversation_turns * 2:
-                # Get the latest assistant segment
-                for i in range(len(harness.conversation_segments) - 1, -1, -1):
-                    if harness.conversation_segments[i][0] == "assistant":
-                        assistant_audio = harness.conversation_segments[i][1]
-                        assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
-                        print(f"🤖 Assistant: {assistant_text}")
-                        state.add_assistant_audio(assistant_audio)
-                        state.append_message("assistant", assistant_text, harness.last_assistant_activity_time)
-                        break
+    def output_transcript(self, state: ConversationState) -> None:
+        """
+        Save the conversation history to a JSON file.
+        """
+       # Output the full transcript as a multiline string
+        transcript_lines = ["\n" + "="*60, "FULL CONVERSATION TRANSCRIPT", "="*60]
         
-        print(f"\nConversation completed after {conversation_turns} turns")
-        
-        # Print conversation summary
-        print("\nConversation Summary:")
         for msg in state.history:
             role = "Customer" if msg["role"] == "user" else "Assistant"
-            print(f"{msg["timestamp"]}  {role}: {msg['content']}")
-
-
-async def run_test_suite():
-    """Run a suite of test scenarios."""
-    scenarios = [
-        # Add more scenarios here
-        ProxyHumanScenario()
-    ]
-    
-    for scenario in scenarios:
-        print(f"\n{'='*50}")
-        print(f"Running: {scenario.name}")
-        print(f"Description: {scenario.description}")
-        print(f"{'='*50}\n")
+            timestamp = msg.get("start_datetime", msg.get("datetime", ""))
+            
+            # Format each line of the transcript
+            if timestamp:
+                # Extract just the time portion if it's a full datetime
+                if "T" in timestamp:
+                    time_part = timestamp.split("T")[1].split(".")[0]  # Gets HH:MM:SS
+                else:
+                    time_part = timestamp
+                transcript_lines.append(f"[{time_part}] {role}: {msg['content']}")
+            else:
+                transcript_lines.append(f"{role}: {msg['content']}")
         
+        transcript_lines.append("="*60)
+        
+        # Log the complete transcript as one multiline string
+        logger.info("\n".join(transcript_lines))
+
+
+async def run_test_suite() -> None:
+    """Run a suite of test scenarios."""
+    scenarios: List[TestScenario] = [
+        ProxyHumanScenario(),
+    ]
+
+    for scenario in scenarios:
+        banner = "=" * 50
+        logger.info("\n%s\nRunning: %s\nDescription: %s\n%s", banner, scenario.name, scenario.description, banner)
+
         harness = VoiceCallClient()
         state = ConversationState()
+        receive_task: Optional[asyncio.Task] = None
+
         try:
-            await harness.connect(f"test-{scenario.name}")
-            
+            await harness.connect(f"test-{scenario.name.replace(' ', '_')}")
             receive_task = asyncio.create_task(harness.receive_messages())
+
             await scenario.run(harness, state)
-            await asyncio.sleep(3)  # Wait for any final responses
-            
-            # Save the conversation audio
+
+            # Give the server a moment to finish any trailing work
+            await asyncio.sleep(3)
+
+            # Save outputs
             output_dir = Path("test_outputs")
             output_dir.mkdir(exist_ok=True)
-            
-            # Save the complete conversation as one file
-            await harness.save_conversation_audio(
-                f"test_outputs/{scenario.name.replace(' ', '_')}_conversation.wav"
-            )
 
-            # Also save conversation transcript
-            if isinstance(scenario, ProxyHumanScenario):
-                transcript_path = f"test_outputs/{scenario.name.replace(' ', '_')}_transcript.json"
-                with open(transcript_path, "w") as f:
-                    json.dump(state.history, f, indent=4)  # Save the history as a JSON file
-                print(f"Transcript saved to {transcript_path}")
+            wav_path = output_dir / f"{scenario.name.replace(' ', '_')}_conversation.wav"
+            await harness.save_conversation_audio(str(wav_path))
+
+            transcript_path = output_dir / f"{scenario.name.replace(' ', '_')}_transcript.json"
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                json.dump(state.history, f, indent=2, ensure_ascii=False)
+            logger.info("Transcript saved to %s", transcript_path)
 
         finally:
-            receive_task.cancel()
-            try:
-                await receive_task
-            except asyncio.CancelledError:
-                pass
+            if receive_task:
+                receive_task.cancel()
+                try:
+                    await receive_task
+                except asyncio.CancelledError:
+                    pass
             await harness.disconnect()
-            
+
 
 if __name__ == "__main__":
     asyncio.run(run_test_suite())
