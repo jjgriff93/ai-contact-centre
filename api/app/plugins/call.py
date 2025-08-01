@@ -4,6 +4,10 @@ from azure.communication.callautomation.aio import CallAutomationClient
 from semantic_kernel.functions import kernel_function
 
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
 class CallPlugin:
     """Call plugin for managing the ACS connection."""
 
@@ -14,7 +18,7 @@ class CallPlugin:
     @kernel_function
     async def hangup(self):
         """When the user is done, say goodbye and then call this function."""
-        logging.info("@ hangup has been called!")
+        logger.info("@ hangup has been called!")
         await self._acs_client.get_call_connection(self._call_connection_id).hang_up(
             is_for_everyone=True
         )

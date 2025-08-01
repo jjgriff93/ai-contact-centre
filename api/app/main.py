@@ -21,10 +21,11 @@ from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from semantic_kernel import Kernel
+from semantic_kernel.connectors.ai import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import ListenEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
-from semantic_kernel.contents import AudioContent, RealtimeAudioEvent
+from semantic_kernel.contents import AudioContent, RealtimeAudioEvent, ChatHistory
 
 from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveInputAudioEchoCancellation,
@@ -32,7 +33,7 @@ from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveTurnDetection,
                                AzureVoiceLiveVoiceConfig,
                                AzureVoiceLiveWebsocket)
-from .plugins.call import CallPlugin
+from .plugins import CallPlugin, DeliveryPlugin
 
 
 class Settings(BaseSettings):
@@ -128,6 +129,11 @@ async def agent_connect(websocket: WebSocket):
         plugin_name="call",
         description="Functions for managing the ACS call",
     )
+    kernel.add_plugin(
+        plugin=DeliveryPlugin(),
+        plugin_name="delivery",
+        description="Functions for managing the delivery",
+    )
 
     realtime_client = AzureVoiceLiveWebsocket(
         endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
@@ -143,11 +149,11 @@ async def agent_connect(websocket: WebSocket):
     # Create the settings for the session
     execution_settings = AzureVoiceLiveExecutionSettings(
         instructions="""
-    You are a helpful support agent for a contact center.
-    A customer has called you and needs help with an issue or request.
-    Be polite and considered in your responses and utilise
-    the tools available to you to help the customer.
-    """,
+        You are a helpful support agent for a contact center.
+        A customer has called you and needs help with an issue or request.
+        Be polite and considered in your responses and utilise
+        the tools available to you to help the customer.
+        """,
         voice=AzureVoiceLiveVoiceConfig(
             name="en-US-Ava:DragonHDLatestNeural",
             type="azure-standard",
@@ -165,6 +171,9 @@ async def agent_connect(websocket: WebSocket):
             type="server_echo_cancellation"
         ),
     )
+
+    chat_history = ChatHistory()
+    chat_history.add_system_message(execution_settings.instructions)
 
     async def from_acs_to_realtime(client: RealtimeClientBase):
         """Function that forwards the audio from the ACS client to the model."""
@@ -189,7 +198,7 @@ async def agent_connect(websocket: WebSocket):
                 break
 
     # Create the realtime client session
-    async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel):
+    async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel, chat_history=chat_history):
         # start handling the messages from the realtime client with callback to forward the audio to acs
         receive_task = asyncio.create_task(
             handle_realtime_messages(websocket, realtime_client)
