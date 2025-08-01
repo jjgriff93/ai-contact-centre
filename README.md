@@ -23,9 +23,47 @@ task setup:infra
 
 This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and deploy the packaged `api` to the Azure Container Apps environment.
 
-### 3. Purchase an ACS phone number
+### 3. Manage phone numbers
 
-You can purchase a phone number from the Azure portal or using the Azure CLI. Follow the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new) to purchase a phone number.
+#### Using the CLI tool (recommended)
+
+The project includes a simple CLI for managing phone numbers. The CLI automatically uses the same Azure Communication Services resource as your deployed application.
+
+**Prerequisites**:
+
+- Ensure you're authenticated with Azure CLI (`az login`)
+- The CLI will automatically detect your ACS resource from environment variables (`AZURE_ACS_ENDPOINT` or `ACS_ENDPOINT`)
+
+```bash
+# Navigate to the API directory
+cd api
+
+# Show available commands
+uv run python app/phone_cli.py --help
+
+# List owned phone numbers
+uv run python app/phone_cli.py list
+
+# Search for available numbers (e.g., UK toll-free)
+uv run python app/phone_cli.py search GB toll-free
+
+# Purchase a phone number (interactive - defaults to US toll-free)
+uv run python app/phone_cli.py purchase
+
+# Purchase a specific country/type
+uv run python app/phone_cli.py purchase US toll-free
+uv run python app/phone_cli.py purchase GB geographic
+
+# Purchase a specific phone number (if available)
+uv run python app/phone_cli.py purchase US toll-free +18001234567
+
+# Release a phone number
+uv run python app/phone_cli.py release +1234567890
+```
+
+#### Using Azure portal
+
+You can also purchase a phone number from the Azure portal using the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new).
 
 ### 4. Run API locally
 

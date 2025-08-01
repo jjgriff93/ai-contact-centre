@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "azure-communication-callautomation>=1.4.0",
+    "azure-communication-phonenumbers>=1.2.0",
     "azure-eventgrid>=4.22.0",
     "azure-identity>=1.23.0",
     "dotenv-azd>=0.3.0",
