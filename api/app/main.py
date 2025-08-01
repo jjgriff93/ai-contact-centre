@@ -170,6 +170,7 @@ async def agent_connect(websocket: WebSocket):
         input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
             type="server_echo_cancellation"
         ),
+        function_choice_behavior=FunctionChoiceBehavior.Auto(),
     )
 
     chat_history = ChatHistory()
