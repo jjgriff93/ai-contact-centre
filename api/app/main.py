@@ -80,7 +80,7 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
             )
         )
 
-    idx_last_sent = len(chat_history.messages)  # Chat history will contain system prompt
+    idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
     async for event in client.receive(audio_output_callback=from_realtime_to_acs):
         match event.service_type:
             case ListenEvents.SESSION_CREATED:
@@ -115,11 +115,11 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                     json.dumps(
                         {
                             "kind": "ChatHistory",
-                            "data": export_chat_history(chat_history, from_index=idx_last_sent + 1)
+                            "data": export_chat_history(chat_history, from_index=idx_first_msg_to_send)
                         }
                     )
                 )
-                idx_last_sent = len(chat_history.messages)
+                idx_first_msg_to_send = len(chat_history.messages)
             case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
                 logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
                 # Add assistant message to chat history

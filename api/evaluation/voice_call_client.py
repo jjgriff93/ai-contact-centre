@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import wave
-from typing import List, Optional, Tuple, Literal
+from typing import List, Optional, Tuple, Literal, Dict
 import asyncio
 import websockets
 
@@ -45,6 +45,9 @@ class VoiceCallClient:
         # NEW: timing for the in-progress assistant turn
         self.current_assistant_turn_started_at: Optional[float] = None
 
+        # Conversation history
+        self.chat_history: List[Dict] = []
+
     async def connect(self, call_connection_id: str = "test-connection-123") -> None:
         """Connect to the WebSocket endpoint with the required headers."""
         headers = {"x-ms-call-connection-id": call_connection_id}
@@ -79,12 +82,11 @@ class VoiceCallClient:
 
         async for message in self.websocket:
             data = json.loads(message)
-
             if data.get("kind") == "AudioData":
 
                 if not self.current_assistant_turn_started_at:
-                   self.current_assistant_turn_started_at = time.time()
- 
+                    self.current_assistant_turn_started_at = time.time()
+
                 # Received assistant audio
                 audio_b64 = data["audioData"]["data"]
                 audio_data = base64.b64decode(audio_b64)
@@ -103,6 +105,9 @@ class VoiceCallClient:
                 self.is_assistant_speaking = True
 
                 logger.debug("Received assistant audio: %d bytes", len(audio_data))
+            elif data.get("kind") == "ChatHistory":
+                new_messages = data.get("data", [])
+                self.chat_history.extend(new_messages)
             else:
                 logger.debug("Received message: %s", data)
 

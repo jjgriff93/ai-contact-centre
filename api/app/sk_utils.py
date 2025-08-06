@@ -20,9 +20,11 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
     messages_formatted = []
     for msg in messages_raw:
         message_data = {
-            "role": msg.role.value,
-            "content": msg.content or "",
+            "role": msg.role.value
         }
+
+        if msg.content:
+            message_data["content"] = str(msg.content)
 
         # Include function calls if present
         function_calls = []
