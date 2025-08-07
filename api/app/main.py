@@ -160,7 +160,7 @@ async def agent_connect(websocket: WebSocket):
     execution_settings = AzureVoiceLiveExecutionSettings(
         instructions=rendered_prompt,
         voice=AzureVoiceLiveVoiceConfig(
-            name="en-US-Alloy:DragonHDLatestNeural", # en-GB-OllieMultilingualNeural
+            name="en-US-Andrew:DragonHDLatestNeural", # en-US-Alloy:DragonHDLatestNeural, en-GB-OllieMultilingualNeural
             type="azure-standard",
         ),
         turn_detection=AzureVoiceLiveTurnDetection(
@@ -191,6 +191,7 @@ async def agent_connect(websocket: WebSocket):
                 # Receive data from the ACS client
                 stream_data = await websocket.receive_text()
                 data = json.loads(stream_data)
+                logger.debug(f"Received data from ACS client: {data}")
                 if data["kind"] == "AudioData":
                     # send it to the Realtime service
                     await client.send(

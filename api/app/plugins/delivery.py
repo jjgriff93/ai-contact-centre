@@ -59,14 +59,15 @@ class DeliveryPlugin:
             logger.warning("Attempted to get available slots without verifying identity.")
             raise ValueError("Please verify customer's identity before getting available delivery slots.")
 
-        if not start_date:
-            start_date = date.today().isoformat()
-        if not end_date:
-            end_date = (date.today() + timedelta(days=7)).isoformat()
+        # if not start_date:
+        #     start_date = date.today().isoformat()
+        # if not end_date:
+        #     end_date = (date.today() + timedelta(days=7)).isoformat()
 
-        # Mock implementation for available slots
-        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
-        range_days = (end - start).days
-        randays = np.random.choice(range_days, 3, replace=False)
+        # # Mock implementation for available slots
+        # start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+        # range_days = (end - start).days
+        # randays = np.random.choice(range_days, 3, replace=False)
         # Example: return {"001": "2023-10-01T10:00:00Z", "002": "2023-10-02T10:00:00Z", "003": "2023-10-03T10:00:00Z"}
-        return {str(i+1).zfill(3): (start + timedelta(days=int(d))).isoformat() + "T10:00:00Z" for i, d in enumerate(randays)}
+        # return {str(i+1).zfill(3): (start + timedelta(days=int(d))).isoformat() + "T10:00:00Z" for i, d in enumerate(randays)}
+        return {"001": "2025-08-08T10:00:00Z", "002": "2025-08-09T10:00:00Z", "003": "2025-08-10T10:00:00Z"}
