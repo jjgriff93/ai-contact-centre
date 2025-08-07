@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import uuid
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
 
+import yaml
 from azure.communication.callautomation import (AudioFormat,
                                                 MediaStreamingAudioChannelType,
                                                 MediaStreamingContentType,
@@ -20,16 +22,20 @@ from fastapi import FastAPI, WebSocket
 from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import ListenEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
-from semantic_kernel.contents import AudioContent, RealtimeAudioEvent, ChatHistory
+from semantic_kernel.contents import (AudioContent, ChatHistory,
+                                      RealtimeAudioEvent)
+from semantic_kernel.functions import KernelArguments
+from semantic_kernel.prompt_template import (KernelPromptTemplate,
+                                             PromptTemplateConfig)
 
 from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveInputAudioEchoCancellation,
                                AzureVoiceLiveInputAudioNoiseReduction,
+                               AzureVoiceLiveInputAudioTranscription,
                                AzureVoiceLiveTurnDetection,
                                AzureVoiceLiveVoiceConfig,
                                AzureVoiceLiveWebsocket)
@@ -123,19 +129,7 @@ async def agent_connect(websocket: WebSocket):
         await websocket.close(code=1008, reason="No call connection ID provided.")
         return
 
-    kernel = Kernel()
-    kernel.add_plugin(
-        plugin=CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-        plugin_name="call",
-        description="Functions for managing the ACS call",
-    )
-    kernel.add_plugin(
-        plugin=DeliveryPlugin(),
-        plugin_name="delivery",
-        description="Functions for managing the delivery",
-    )
-
-    realtime_client = AzureVoiceLiveWebsocket(
+    realtime_agent = AzureVoiceLiveWebsocket(
         endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
         deployment_name="gpt-4o-realtime-preview",
         ad_token_provider=get_bearer_token_provider(
@@ -143,19 +137,30 @@ async def agent_connect(websocket: WebSocket):
             "https://cognitiveservices.azure.com/.default",
         ),
         api_version="2025-05-01-preview",
+        plugins=[
+            CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
+            DeliveryPlugin(),
+        ]
     )
-    print(f"Connecting to Realtime API at {realtime_client.client.websocket_base_url}")
+
+    # Load the YAML template for the agent
+    # TODO: package up in a util method
+    yaml_path = Path(__file__).parent / "templates" / "DeliveryAgent.yaml"
+    with open(yaml_path, "r") as file:
+        yaml_content = file.read()
+        yaml_data = yaml.safe_load(yaml_content)
+    
+    prompt_template_config = PromptTemplateConfig(**yaml_data)
+    prompt_template = KernelPromptTemplate(prompt_template_config=prompt_template_config)
+    prompt_arguments = KernelArguments(agent_name="Archie")
+    rendered_prompt = await prompt_template.render(realtime_agent._kernel, prompt_arguments) # type: ignore
+    logger.info(f"Rendered prompt: {rendered_prompt}")
 
     # Create the settings for the session
     execution_settings = AzureVoiceLiveExecutionSettings(
-        instructions="""
-        You are a helpful support agent for a contact center.
-        A customer has called you and needs help with an issue or request.
-        Be polite and considered in your responses and utilise
-        the tools available to you to help the customer.
-        """,
+        instructions=rendered_prompt,
         voice=AzureVoiceLiveVoiceConfig(
-            name="en-US-Ava:DragonHDLatestNeural",
+            name="en-US-Alloy:DragonHDLatestNeural", # en-GB-OllieMultilingualNeural
             type="azure-standard",
         ),
         turn_detection=AzureVoiceLiveTurnDetection(
@@ -170,6 +175,9 @@ async def agent_connect(websocket: WebSocket):
         input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
             type="server_echo_cancellation"
         ),
+        # input_audio_transcription=AzureVoiceLiveInputAudioTranscription(
+        #     model="azure-fast-transcription"
+        # ),
         function_choice_behavior=FunctionChoiceBehavior.Auto(),
     )
 
@@ -198,14 +206,14 @@ async def agent_connect(websocket: WebSocket):
                 logger.info("Websocket connection closed.")
                 break
 
-    # Create the realtime client session
-    async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel, chat_history=chat_history):
+    # Create the realtime session
+    async with realtime_agent(settings=execution_settings, create_response=True, chat_history=chat_history):
         # start handling the messages from the realtime client with callback to forward the audio to acs
         receive_task = asyncio.create_task(
-            handle_realtime_messages(websocket, realtime_client)
+            handle_realtime_messages(websocket, realtime_agent)
         )
         # receive messages from the ACS client and send them to the realtime client
-        await from_acs_to_realtime(realtime_client)
+        await from_acs_to_realtime(realtime_agent)
         receive_task.cancel()
 
 
