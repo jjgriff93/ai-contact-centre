@@ -22,7 +22,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai import ListenEvents
+from semantic_kernel.connectors.ai.open_ai import ListenEvents, SendEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
 from semantic_kernel.contents import AudioContent, RealtimeAudioEvent, ChatHistory
@@ -34,6 +34,7 @@ from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveVoiceConfig,
                                AzureVoiceLiveWebsocket)
 from .plugins import CallPlugin, DeliveryPlugin
+from .sk_utils import export_chat_history
 
 
 class Settings(BaseSettings):
@@ -58,7 +59,7 @@ credential = DefaultAzureCredential()
 acs_client = CallAutomationClient(settings.AZURE_ACS_ENDPOINT, credential) # type: ignore
 
 
-async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase):
+async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):
     """Function that handles the messages from the Realtime service.
 
     This function only handles the non-audio messages.
@@ -79,6 +80,7 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
             )
         )
 
+    idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
     async for event in client.receive(audio_output_callback=from_realtime_to_acs):
         match event.service_type:
             case ListenEvents.SESSION_CREATED:
@@ -108,8 +110,27 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                     logger.debug(
                         f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"  # type: ignore
                     )
+                # Send chat history (including function calls) to client
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "kind": "ChatHistory",
+                            "data": export_chat_history(chat_history, from_index=idx_first_msg_to_send)
+                        }
+                    )
+                )
+                idx_first_msg_to_send = len(chat_history.messages)
             case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
                 logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
+                # Add assistant message to chat history
+                chat_history.add_assistant_message(event.service_event.transcript)
+            # case ListenEvents.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
+                # Add function call to chat history
+                # Disabling for now - redundant with function result?
+                # chat_history.add_tool_message([event.function_call])
+            case SendEvents.CONVERSATION_ITEM_CREATE:
+                # Add function call result to chat history
+                chat_history.add_tool_message([event.function_result])
 
 
 @app.websocket("/ws")
@@ -199,10 +220,10 @@ async def agent_connect(websocket: WebSocket):
                 break
 
     # Create the realtime client session
-    async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel, chat_history=chat_history):
+    async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel):
         # start handling the messages from the realtime client with callback to forward the audio to acs
         receive_task = asyncio.create_task(
-            handle_realtime_messages(websocket, realtime_client)
+            handle_realtime_messages(websocket, realtime_client, chat_history)
         )
         # receive messages from the ACS client and send them to the realtime client
         await from_acs_to_realtime(realtime_client)
