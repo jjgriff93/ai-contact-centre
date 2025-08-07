@@ -317,9 +317,6 @@ async def callbacks(contextId: str, events: list[dict]):
                 logger.warning(f"Message:->{event_data['resultInformation']['message']}")
             case "Microsoft.Communication.CallDisconnected":
                 logger.debug(f"Call disconnected for connection id: {call_connection_id}")
-            case "Microsoft.Communication.CallDisconnected":
-                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
-                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
 
 if __name__ == "__main__":
     import uvicorn
