@@ -19,6 +19,8 @@ from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv_azd import AzdCommandNotFoundError, load_azd_env
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -56,7 +58,11 @@ except AzdCommandNotFoundError as e:
 settings = Settings() # type: ignore
 app = FastAPI()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+
+# Mount static files
+static_path = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 # Get credential for authentication to Azure services (from Azure CLI locally and Managed Identity in Azure Container Apps)
 credential = DefaultAzureCredential()
@@ -118,6 +124,12 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                 logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
 
 
+@app.get("/")
+async def root():
+    """Serve the main frontend page."""
+    return FileResponse(Path(__file__).parent / "static" / "index.html")
+
+
 @app.websocket("/ws")
 async def agent_connect(websocket: WebSocket):
     """Websocket endpoint for connecting from ACS Audio Stream to the agent."""
@@ -125,9 +137,7 @@ async def agent_connect(websocket: WebSocket):
     call_connection_id = websocket.headers.get("x-ms-call-connection-id")
 
     if not call_connection_id:
-        logger.error("No call connection ID provided in headers.")
-        await websocket.close(code=1008, reason="No call connection ID provided.")
-        return
+        logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions won't work.")
 
     realtime_agent = AzureVoiceLiveWebsocket(
         endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
@@ -166,8 +176,6 @@ async def agent_connect(websocket: WebSocket):
         turn_detection=AzureVoiceLiveTurnDetection(
             type="server_vad",
             create_response=True,
-            silence_duration_ms=800,
-            threshold=0.8,
         ),
         input_audio_noise_reduction=AzureVoiceLiveInputAudioNoiseReduction(
             type="azure_deep_noise_suppression"
