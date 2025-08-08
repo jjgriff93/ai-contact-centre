@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Contact Centre - Debug Frontend</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status.disconnected {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .status.connecting {
+            background-color: #fff3e0;
+            color: #ef6c00;
+        }
+        .status.connected {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #1565c0;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .recording {
+            background-color: #d32f2f !important;
+        }
+        .recording:hover {
+            background-color: #c62828 !important;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+        }
+        .log-info {
+            color: #007bff;
+        }
+        .log-error {
+            color: #dc3545;
+        }
+        .log-success {
+            color: #28a745;
+        }
+        .audio-controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .volume-control {
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Contact Centre - Debug Frontend</h1>
+        <p style="text-align: center; color: #666;">
+            Debug interface for testing the AI agent without Azure Communication Services
+        </p>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div class="controls">
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        </div>
+
+        <div class="audio-controls">
+            <button id="startRecordingBtn" onclick="startRecording()" disabled>Start Recording</button>
+            <button id="stopRecordingBtn" onclick="stopRecording()" disabled>Stop Recording</button>
+            <div class="volume-control">
+                <label for="outputVolume">Output Volume: </label>
+                <input type="range" id="outputVolume" min="0" max="100" value="50" onchange="setVolume(this.value)">
+                <span id="volumeDisplay">50%</span>
+            </div>
+        </div>
+        
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let mediaRecorder = null;
+        let audioStream = null;
+        let audioContext = null;
+        let isRecording = false;
+        let outputVolume = 0.5;
+
+        // UI elements
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const startRecordingBtn = document.getElementById('startRecordingBtn');
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+        const logEl = document.getElementById('log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(logEntry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function updateStatus(status, message) {
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = message;
+        }
+
+        async function connect() {
+            try {
+                updateStatus('connecting', 'Connecting...');
+                log('Connecting to WebSocket...');
+                
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/debug`;
+                
+                websocket = new WebSocket(wsUrl);
+                
+                websocket.onopen = function() {
+                    updateStatus('connected', 'Connected');
+                    log('WebSocket connected successfully', 'success');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    startRecordingBtn.disabled = false;
+                };
+                
+                websocket.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleServerMessage(data);
+                    } catch (e) {
+                        log(`Received non-JSON message: ${event.data}`);
+                    }
+                };
+                
+                websocket.onclose = function() {
+                    updateStatus('disconnected', 'Disconnected');
+                    log('WebSocket connection closed');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    startRecordingBtn.disabled = true;
+                    stopRecordingBtn.disabled = true;
+                    stopRecording();
+                };
+                
+                websocket.onerror = function(error) {
+                    log('WebSocket error: ' + error, 'error');
+                    updateStatus('disconnected', 'Connection Error');
+                };
+                
+            } catch (error) {
+                log('Connection failed: ' + error.message, 'error');
+                updateStatus('disconnected', 'Connection Failed');
+            }
+        }
+
+        function disconnect() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+            stopRecording();
+        }
+
+        async function startRecording() {
+            try {
+                log('Requesting microphone access...');
+                audioStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        sampleRate: 24000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    } 
+                });
+                
+                audioContext = new AudioContext({ sampleRate: 24000 });
+                
+                // Create MediaRecorder for sending audio data
+                mediaRecorder = new MediaRecorder(audioStream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                
+                mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0 && websocket && websocket.readyState === WebSocket.OPEN) {
+                        // Convert to base64 and send
+                        const reader = new FileReader();
+                        reader.onload = function() {
+                            const base64Data = reader.result.split(',')[1];
+                            const message = {
+                                kind: "AudioData",
+                                audioData: {
+                                    data: base64Data,
+                                    format: "webm"
+                                }
+                            };
+                            websocket.send(JSON.stringify(message));
+                        };
+                        reader.readAsDataURL(event.data);
+                    }
+                };
+                
+                // Start recording with small intervals for real-time streaming
+                mediaRecorder.start(100); // 100ms intervals
+                isRecording = true;
+                
+                startRecordingBtn.disabled = true;
+                startRecordingBtn.classList.add('recording');
+                stopRecordingBtn.disabled = false;
+                
+                log('Recording started', 'success');
+                
+            } catch (error) {
+                log('Failed to start recording: ' + error.message, 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                log('Recording stopped');
+            }
+            
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            startRecordingBtn.disabled = false;
+            startRecordingBtn.classList.remove('recording');
+            stopRecordingBtn.disabled = true;
+        }
+
+        function handleServerMessage(data) {
+            switch (data.kind) {
+                case 'AudioData':
+                    playAudio(data.audioData.data);
+                    break;
+                case 'ChatHistory':
+                    log('Chat history received: ' + JSON.stringify(data.data));
+                    break;
+                case 'StopAudio':
+                    log('Stop audio signal received');
+                    break;
+                default:
+                    log('Received: ' + JSON.stringify(data));
+            }
+        }
+
+        async function playAudio(base64Data) {
+            try {
+                if (!audioContext) {
+                    audioContext = new AudioContext();
+                }
+                
+                // Decode base64 to array buffer
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // Decode audio buffer
+                const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+                
+                // Create and play audio source
+                const source = audioContext.createBufferSource();
+                const gainNode = audioContext.createGain();
+                
+                source.buffer = audioBuffer;
+                gainNode.gain.value = outputVolume;
+                
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                source.start();
+                
+                log('Playing audio response');
+                
+            } catch (error) {
+                log('Failed to play audio: ' + error.message, 'error');
+            }
+        }
+
+        function setVolume(value) {
+            outputVolume = value / 100;
+            document.getElementById('volumeDisplay').textContent = value + '%';
+        }
+
+        // Initialize
+        log('Debug frontend loaded', 'success');
+        log('Click Connect to establish WebSocket connection');
+    </script>
+</body>
+</html>

@@ -6,6 +6,8 @@ import os
 import uuid
 from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
+import wave
+import io
 
 from azure.communication.callautomation import (AudioFormat,
                                                 MediaStreamingAudioChannelType,
@@ -16,7 +18,9 @@ from azure.communication.callautomation.aio import CallAutomationClient
 from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv_azd import AzdCommandNotFoundError, load_azd_env
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -50,6 +54,10 @@ except AzdCommandNotFoundError as e:
 
 settings = Settings() # type: ignore
 app = FastAPI()
+
+# Mount static files for debug frontend
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -57,6 +65,198 @@ logger.setLevel(logging.INFO)
 credential = DefaultAzureCredential()
 
 acs_client = CallAutomationClient(settings.AZURE_ACS_ENDPOINT, credential) # type: ignore
+
+
+@app.get("/debug", response_class=HTMLResponse)
+async def debug_frontend():
+    """Serve the debug frontend HTML page."""
+    try:
+        with open("static/debug.html", "r") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Debug frontend not found</h1><p>Please ensure static/debug.html exists.</p>", status_code=404)
+
+
+def convert_webm_to_pcm(webm_data: bytes) -> bytes:
+    """Convert WebM audio data to PCM format expected by Azure Voice Live.
+    
+    Note: This is a simplified placeholder. In a production environment,
+    you would need proper audio format conversion using libraries like ffmpeg-python.
+    For now, we'll pass the data through and let the AI service handle format issues.
+    """
+    # TODO: Implement proper WebM to PCM conversion
+    # For now, return the data as-is - the AI service may handle format conversion
+    return webm_data
+
+
+async def handle_debug_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):
+    """Function that handles the messages from the Realtime service for debug frontend.
+
+    This function only handles the non-audio messages.
+    Audio is done through the callback so that it is faster and smoother.
+    """
+
+    async def from_realtime_to_debug_client(audio: ndarray):
+        """Function that forwards the audio from the model to the debug websocket client."""
+        logger.debug("Audio received from the model, sending to debug client")
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "kind": "AudioData",
+                    "audioData": {
+                        "data": base64.b64encode(audio.tobytes()).decode("utf-8")
+                    },
+                }
+            )
+        )
+
+    idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
+    async for event in client.receive(audio_output_callback=from_realtime_to_debug_client):
+        match event.service_type:
+            case ListenEvents.SESSION_CREATED:
+                logger.info("Debug Session Created Message")
+                logger.debug(f"  Session Id: {event.service_event.session.id}")  # type: ignore
+            case ListenEvents.ERROR:
+                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
+            case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
+                logger.info("Input Audio Buffer Cleared Message")
+            case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+                logger.debug(
+                    f"Voice activity detection started at {event.service_event.audio_start_ms} [ms]"  # type: ignore
+                )
+                await websocket.send_text(
+                    json.dumps(
+                        {"kind": "StopAudio", "AudioData": None, "StopAudio": {}}
+                    )
+                )
+            case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
+                logger.info(f" User:-- {event.service_event.transcript}")  # type: ignore
+            case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
+                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
+            case ListenEvents.RESPONSE_DONE:
+                logger.info("Response Done Message")
+                logger.debug(f"  Response Id: {event.service_event.response.id}")  # type: ignore
+                if event.service_event.response.status_details:  # type: ignore
+                    logger.debug(
+                        f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"  # type: ignore
+                    )
+                # Send chat history (including function calls) to client
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "kind": "ChatHistory",
+                            "data": export_chat_history(chat_history, from_index=idx_first_msg_to_send)
+                        }
+                    )
+                )
+                idx_first_msg_to_send = len(chat_history.messages)
+            case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
+                logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
+                # Add assistant message to chat history
+                chat_history.add_assistant_message(event.service_event.transcript)
+            case SendEvents.CONVERSATION_ITEM_CREATE:
+                # Add function call result to chat history
+                chat_history.add_tool_message([event.function_result])
+
+
+@app.websocket("/ws/debug")
+async def debug_agent_connect(websocket: WebSocket):
+    """Debug websocket endpoint for connecting from frontend to the agent without ACS."""
+    await websocket.accept()
+    logger.info("Debug WebSocket connection accepted")
+
+    # Create a simplified kernel for debugging (without call automation functions)
+    kernel = Kernel()
+    kernel.add_plugin(
+        plugin=DeliveryPlugin(),
+        plugin_name="delivery", 
+        description="Functions for managing the delivery",
+    )
+
+    realtime_client = AzureVoiceLiveWebsocket(
+        endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
+        deployment_name="gpt-4o-realtime-preview",
+        ad_token_provider=get_bearer_token_provider(
+            credential,
+            "https://cognitiveservices.azure.com/.default",
+        ),
+        api_version="2025-05-01-preview",
+    )
+    logger.info(f"Debug client connecting to Realtime API at {realtime_client.client.websocket_base_url}")
+
+    # Create the settings for the session
+    execution_settings = AzureVoiceLiveExecutionSettings(
+        instructions="""
+        You are a helpful support agent for a contact center in debug mode.
+        A user is testing the system through a web interface.
+        Be polite and considered in your responses. You can help with general questions
+        but note that this is a debug session, so some call-specific functions may not be available.
+        """,
+        voice=AzureVoiceLiveVoiceConfig(
+            name="en-US-Ava:DragonHDLatestNeural",
+            type="azure-standard",
+        ),
+        turn_detection=AzureVoiceLiveTurnDetection(
+            type="server_vad",
+            create_response=True,
+            silence_duration_ms=800,
+            threshold=0.8,
+        ),
+        input_audio_noise_reduction=AzureVoiceLiveInputAudioNoiseReduction(
+            type="azure_deep_noise_suppression"
+        ),
+        input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
+            type="server_echo_cancellation"
+        ),
+        function_choice_behavior=FunctionChoiceBehavior.Auto(),
+    )
+
+    chat_history = ChatHistory()
+    chat_history.add_system_message(execution_settings.instructions)
+
+    async def from_debug_client_to_realtime(client: RealtimeClientBase):
+        """Function that forwards the audio from the debug client to the model."""
+        try:
+            while True:
+                # Receive data from the debug client
+                stream_data = await websocket.receive_text()
+                data = json.loads(stream_data)
+                if data["kind"] == "AudioData":
+                    # Get audio data and format
+                    audio_data = data["audioData"]["data"]
+                    audio_format = data["audioData"].get("format", "unknown")
+                    
+                    logger.debug(f"Received audio data, format: {audio_format}")
+                    
+                    # For now, pass the audio data directly to the Realtime service
+                    # In production, you'd convert WebM to the expected PCM format
+                    await client.send(
+                        event=RealtimeAudioEvent(
+                            audio=AudioContent(
+                                data=audio_data,
+                                data_format="base64",
+                                inner_content=data,
+                            ),
+                        )
+                    )
+        except WebSocketDisconnect:
+            logger.info("Debug websocket connection closed by client.")
+        except Exception as e:
+            logger.error(f"Error in debug client to realtime: {e}")
+
+    # Create the realtime client session
+    try:
+        async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel):
+            # start handling the messages from the realtime client with callback to forward the audio to debug client
+            receive_task = asyncio.create_task(
+                handle_debug_realtime_messages(websocket, realtime_client, chat_history)
+            )
+            # receive messages from the debug client and send them to the realtime client
+            await from_debug_client_to_realtime(realtime_client)
+            receive_task.cancel()
+    except Exception as e:
+        logger.error(f"Error in debug realtime session: {e}")
+        await websocket.close(code=1011, reason=f"Server error: {str(e)}")
 
 
 async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):

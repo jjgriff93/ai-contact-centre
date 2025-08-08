@@ -29,6 +29,28 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
 
 ### 4. Run API locally
 
+#### Debug Frontend (New!)
+
+For local development and debugging without requiring ACS phone calls, you can use the built-in debug frontend:
+
+1. Start the API:
+   ```bash
+   task run:api
+   ```
+
+2. Open your browser and navigate to:
+   ```
+   http://localhost:8000/debug
+   ```
+
+3. Click "Connect" to establish a WebSocket connection to the AI agent
+4. Click "Start Recording" to begin capturing microphone input
+5. Speak to test the AI agent responses
+
+This allows you to test the voice AI agent directly through your browser without needing to set up ACS phone numbers or devtunnels.
+
+#### Full ACS Integration
+
 #### First-time setup
 
 - Create a [devtunnel](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview):
