@@ -4,9 +4,20 @@ import json
 import logging
 import os
 import uuid
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
 
+import yaml
+ 
+# Configure root logging so application logs appear under dev server output
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+# Ensure root logger level is applied even if handlers already exist (e.g., dev server)
+logging.getLogger().setLevel(LOG_LEVEL)
 from azure.communication.callautomation import (AudioFormat,
                                                 MediaStreamingAudioChannelType,
                                                 MediaStreamingContentType,
@@ -17,19 +28,25 @@ from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv_azd import AzdCommandNotFoundError, load_azd_env
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from numpy import ndarray
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import ListenEvents, SendEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
-from semantic_kernel.contents import AudioContent, RealtimeAudioEvent, ChatHistory
+from semantic_kernel.contents import (AudioContent, ChatHistory,
+                                      RealtimeAudioEvent)
+from semantic_kernel.functions import KernelArguments
+from semantic_kernel.prompt_template import (KernelPromptTemplate,
+                                             PromptTemplateConfig)
 
 from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveInputAudioEchoCancellation,
                                AzureVoiceLiveInputAudioNoiseReduction,
+                               AzureVoiceLiveInputAudioTranscription,
                                AzureVoiceLiveTurnDetection,
                                AzureVoiceLiveVoiceConfig,
                                AzureVoiceLiveWebsocket)
@@ -51,7 +68,11 @@ except AzdCommandNotFoundError as e:
 settings = Settings() # type: ignore
 app = FastAPI()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+
+# Mount static files
+static_path = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 # Get credential for authentication to Azure services (from Azure CLI locally and Managed Identity in Azure Container Apps)
 credential = DefaultAzureCredential()
@@ -133,6 +154,12 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                 chat_history.add_tool_message([event.function_result])
 
 
+@app.get("/")
+async def root():
+    """Serve the main frontend page."""
+    return FileResponse(Path(__file__).parent / "static" / "index.html")
+
+
 @app.websocket("/ws")
 async def agent_connect(websocket: WebSocket):
     """Websocket endpoint for connecting from ACS Audio Stream to the agent."""
@@ -140,23 +167,9 @@ async def agent_connect(websocket: WebSocket):
     call_connection_id = websocket.headers.get("x-ms-call-connection-id")
 
     if not call_connection_id:
-        logger.error("No call connection ID provided in headers.")
-        await websocket.close(code=1008, reason="No call connection ID provided.")
-        return
+        logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions won't work.")
 
-    kernel = Kernel()
-    kernel.add_plugin(
-        plugin=CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-        plugin_name="call",
-        description="Functions for managing the ACS call",
-    )
-    kernel.add_plugin(
-        plugin=DeliveryPlugin(),
-        plugin_name="delivery",
-        description="Functions for managing the delivery",
-    )
-
-    realtime_client = AzureVoiceLiveWebsocket(
+    realtime_agent = AzureVoiceLiveWebsocket(
         endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
         deployment_name="gpt-4o-realtime-preview",
         ad_token_provider=get_bearer_token_provider(
@@ -164,19 +177,30 @@ async def agent_connect(websocket: WebSocket):
             "https://cognitiveservices.azure.com/.default",
         ),
         api_version="2025-05-01-preview",
+        plugins=[
+            CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
+            DeliveryPlugin(),
+        ]
     )
-    print(f"Connecting to Realtime API at {realtime_client.client.websocket_base_url}")
+
+    # Load the YAML template for the agent
+    # TODO: package up in a util method
+    yaml_path = Path(__file__).parent / "templates" / "DeliveryAgent.yaml"
+    with open(yaml_path, "r") as file:
+        yaml_content = file.read()
+        yaml_data = yaml.safe_load(yaml_content)
+    
+    prompt_template_config = PromptTemplateConfig(**yaml_data)
+    prompt_template = KernelPromptTemplate(prompt_template_config=prompt_template_config)
+    prompt_arguments = KernelArguments(agent_name="Archie")
+    rendered_prompt = await prompt_template.render(realtime_agent._kernel, prompt_arguments) # type: ignore
+    logger.info(f"Rendered prompt: {rendered_prompt}")
 
     # Create the settings for the session
     execution_settings = AzureVoiceLiveExecutionSettings(
-        instructions="""
-        You are a helpful support agent for a contact center.
-        A customer has called you and needs help with an issue or request.
-        Be polite and considered in your responses and utilise
-        the tools available to you to help the customer.
-        """,
+        instructions=rendered_prompt,
         voice=AzureVoiceLiveVoiceConfig(
-            name="en-US-Ava:DragonHDLatestNeural",
+            name="en-US-Andrew:DragonHDLatestNeural", # en-US-Alloy:DragonHDLatestNeural, en-GB-OllieMultilingualNeural
             type="azure-standard",
         ),
         turn_detection=AzureVoiceLiveTurnDetection(
@@ -191,6 +215,9 @@ async def agent_connect(websocket: WebSocket):
         input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
             type="server_echo_cancellation"
         ),
+        # input_audio_transcription=AzureVoiceLiveInputAudioTranscription(
+        #     model="azure-fast-transcription"
+        # ),
         function_choice_behavior=FunctionChoiceBehavior.Auto(),
     )
 
@@ -204,6 +231,7 @@ async def agent_connect(websocket: WebSocket):
                 # Receive data from the ACS client
                 stream_data = await websocket.receive_text()
                 data = json.loads(stream_data)
+                logger.debug(f"Received data from ACS client: {data}")
                 if data["kind"] == "AudioData":
                     # send it to the Realtime service
                     await client.send(
@@ -220,13 +248,13 @@ async def agent_connect(websocket: WebSocket):
                 break
 
     # Create the realtime client session
-    async with realtime_client(settings=execution_settings, create_response=True, kernel=kernel):
+    async with realtime_agent(settings=execution_settings, create_response=True):
         # start handling the messages from the realtime client with callback to forward the audio to acs
         receive_task = asyncio.create_task(
-            handle_realtime_messages(websocket, realtime_client, chat_history)
+            handle_realtime_messages(websocket, realtime_agent, chat_history)
         )
         # receive messages from the ACS client and send them to the realtime client
-        await from_acs_to_realtime(realtime_client)
+        await from_acs_to_realtime(realtime_agent)
         receive_task.cancel()
 
 
@@ -329,9 +357,6 @@ async def callbacks(contextId: str, events: list[dict]):
                 )
                 logger.warning(f"Message:->{event_data['resultInformation']['message']}")
             case "Microsoft.Communication.CallDisconnected":
-                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
-            case "Microsoft.Communication.CallDisconnected":
-                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
                 logger.debug(f"Call disconnected for connection id: {call_connection_id}")
 
 if __name__ == "__main__":
