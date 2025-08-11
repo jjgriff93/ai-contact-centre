@@ -22,3 +22,9 @@ class CallPlugin:
         await self._acs_client.get_call_connection(self._call_connection_id).hang_up(
             is_for_everyone=True
         )
+
+    @kernel_function
+    async def handoff_to_human_agent(self):
+        """Call this function when you are unable to fullfill a request."""
+        logger.info("@ handoff_to_human_agent has been called!")
+        #TODO: implement

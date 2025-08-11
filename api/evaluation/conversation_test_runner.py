@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.ai.evaluation import AzureAIProject
 from dotenv_azd import load_azd_env
+from openai import AsyncAzureOpenAI
+
 from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
                               text_to_speech_pcm)
 from evaluation.voice_call_client import VoiceCallClient
-from openai import AsyncAzureOpenAI
+from evaluation.metrics import TestSuiteEvaluator
 
 # -----------------------------------------------------------------------------
 # Configuration & logging
@@ -112,6 +115,7 @@ class ConversationState:
     last_activity_ts: float = field(default_factory=time.time)
     audio: AudioState = field(default_factory=AudioState)
     turn_timings: List[TurnTiming] = field(default_factory=list)  # Add this
+    function_calls: List[Dict[str, object]] = field(default_factory=list)
 
     def append_message(self, role: MessageRole, content: str, activity_ts: Optional[float] = None,
                        start_time: Optional[float] = None, end_time: Optional[float] = None) -> None:
@@ -177,10 +181,10 @@ class TestScenario:
 class ProxyHumanScenario(TestScenario):
     """Test scenario for proxy human interaction."""
 
-    def __init__(self, system_prompt: Optional[str] = None) -> None:
+    def __init__(self, name: str, system_prompt: Optional[str] = None) -> None:
         super().__init__(
-            "Proxy Human Interaction",
-            "Agent simulates a human customer interacting with the voice AI system.",
+            name=name,
+            description="Agent simulates a human customer interacting with the voice AI system.",
         )
         self.system_prompt = system_prompt or (
             "You are a grocery shopper talking on the phone to a customer support agent. "
@@ -197,6 +201,7 @@ class ProxyHumanScenario(TestScenario):
         # Conversation loop
         conversation_turn = 0
         while conversation_turn < MAX_TURNS:
+
             # Await and transcribe assistant reply
             assistant_start_time = time.time()
             if conversation_turn == 0:
@@ -241,6 +246,9 @@ class ProxyHumanScenario(TestScenario):
 
         logger.info("Conversation completed after %d turns.", conversation_turn)
 
+        # Log function calls
+        state.function_calls = get_function_calls_from_chat_history(harness.chat_history)
+
         # Summary with timing information
         logger.info("Conversation Summary with Timing:")
         for timing in state.turn_timings:
@@ -281,37 +289,58 @@ class ProxyHumanScenario(TestScenario):
         logger.info("\n".join(transcript_lines))
 
 
-async def run_test_suite() -> None:
-    """Run a suite of test scenarios."""
-    scenarios: List[TestScenario] = [
-        ProxyHumanScenario(),
-    ]
+def get_function_calls_from_chat_history(chat_history: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Extract function calls from the chat history exported from Semantic Kernel app."""
+    return [fcall for msg in chat_history if msg["role"] == "tool" for fcall in msg["function_calls"]]
 
-    for scenario in scenarios:
+
+async def run_test_suite(azure_ai_client: AzureAIProject) -> None:
+    """Run a suite of test scenarios."""
+
+    evaluator = TestSuiteEvaluator(azure_ai_client)
+
+    # Load test cases
+    testcases_dir = Path(__file__).parent / "testcases"
+    eval_data_path = testcases_dir / "eval_dataset.json"
+    with open(eval_data_path, "r", encoding="utf-8") as f:
+        scenarios = json.load(f)
+
+    output_dir = testcases_dir / "test_outputs"
+    output_dir.mkdir(exist_ok=True)
+
+    # Run test cases
+    for scenario_data in scenarios:
+
+        simulation = ProxyHumanScenario(
+            name=scenario_data["scenarioName"].replace(' ', '_'),
+            system_prompt=scenario_data["instructions"]
+        )
+
         banner = "=" * 50
-        logger.info("\n%s\nRunning: %s\nDescription: %s\n%s", banner, scenario.name, scenario.description, banner)
+        logger.info("\n%s\nRunning: %s\nDescription: %s\n%s", banner, simulation.name, banner)
 
         harness = VoiceCallClient()
         state = ConversationState()
         receive_task: Optional[asyncio.Task] = None
 
         try:
-            await harness.connect(f"test-{scenario.name.replace(' ', '_')}")
+            await harness.connect(f"test-{simulation.name}")
             receive_task = asyncio.create_task(harness.receive_messages())
 
-            await scenario.run(harness, state)
+            await simulation.run(harness, state)
 
             # Give the server a moment to finish any trailing work
             await asyncio.sleep(3)
 
-            # Save outputs
-            output_dir = Path("test_outputs")
-            output_dir.mkdir(exist_ok=True)
+            evaluator.evaluate_scenario(name=simulation.name, function_calls=state.function_calls,
+                                        expected_function_calls=scenario_data.get("expected_function_calls", []),
+                                        unexpected_function_calls=scenario_data.get("unexpected_function_calls", []))
 
-            wav_path = output_dir / f"{scenario.name.replace(' ', '_')}_conversation.wav"
+            # Save outputs
+            wav_path = output_dir / f"{simulation.name}_conversation.wav"
             await harness.save_conversation_audio(str(wav_path))
 
-            transcript_path = output_dir / f"{scenario.name.replace(' ', '_')}_transcript.json"
+            transcript_path = output_dir / f"{simulation.name}_transcript.json"
             with open(transcript_path, "w", encoding="utf-8") as f:
                 json.dump(state.history, f, indent=2, ensure_ascii=False)
             logger.info("Transcript saved to %s", transcript_path)
@@ -325,6 +354,18 @@ async def run_test_suite() -> None:
                     pass
             await harness.disconnect()
 
+    # TODO: aggregate results
+
 
 if __name__ == "__main__":
-    asyncio.run(run_test_suite())
+
+    try:
+        azure_ai_client = AzureAIProject(
+            subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"],
+            resource_group_name=os.environ["AZURE_RESOURCE_GROUP"],
+            project_name=os.environ["AZURE_AI_PROJECT_NAME"],
+        )
+    except KeyError as e:
+        raise ValueError(f"Missing environment variable: {e}") from e
+
+    asyncio.run(run_test_suite(azure_ai_client))
