@@ -65,6 +65,7 @@ class AudioState:
     """
     Collects raw audio from both sides for later export or analysis.
     """
+
     assistant_chunks: List[bytes] = field(default_factory=list)
     proxy_chunks: List[bytes] = field(default_factory=list)
     combined_chunks: List[bytes] = field(default_factory=list)
@@ -81,12 +82,13 @@ class AudioState:
 @dataclass
 class TurnTiming:
     """Tracks timing information for a single turn."""
+
     role: MessageRole
     start_time: float
     end_time: float
     duration: float
     content: str
-    
+
     def to_dict(self) -> Dict[str, object]:
         return {
             "role": self.role,
@@ -95,9 +97,9 @@ class TurnTiming:
             "end_time": self.end_time,
             "end_datetime": datetime.fromtimestamp(self.end_time).isoformat(timespec="milliseconds"),
             "duration_seconds": self.duration,
-            "content": self.content
+            "content": self.content,
         }
-    
+
 
 @dataclass
 class ConversationState:
@@ -105,13 +107,14 @@ class ConversationState:
     Holds transcript/history and last-activity tracking for the test run.
     Raw audio is delegated to AudioState.
     """
+
     history: List[Dict[str, object]] = field(default_factory=list)
     last_activity_ts: float = field(default_factory=time.time)
     audio: AudioState = field(default_factory=AudioState)
     turn_timings: List[TurnTiming] = field(default_factory=list)  # Add this
 
-    def append_message(self, role: MessageRole, content: str, activity_ts: Optional[float] = None, 
-                      start_time: Optional[float] = None, end_time: Optional[float] = None) -> None:
+    def append_message(self, role: MessageRole, content: str, activity_ts: Optional[float] = None,
+                       start_time: Optional[float] = None, end_time: Optional[float] = None) -> None:
 
         now = time.time()
         entry = {
@@ -123,8 +126,7 @@ class ConversationState:
             ),
             "start_datetime": datetime.fromtimestamp(start_time).isoformat(timespec="milliseconds") if start_time else None,
             "end_datetime": datetime.fromtimestamp(end_time).isoformat(timespec="milliseconds") if end_time else None,
-            "duration_seconds": (end_time - start_time) if start_time and end_time else None
-   
+            "duration_seconds": (end_time - start_time) if start_time and end_time else None,
         }
         self.history.append(entry)
         self.last_activity_ts = now
@@ -141,7 +143,7 @@ async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
     """
 
     start_time = time.time()
-    
+
     audio = bytearray()
     async for pcm_chunk in text_to_speech_pcm(aoai_client, text):
         audio.extend(pcm_chunk)
@@ -190,34 +192,33 @@ class ProxyHumanScenario(TestScenario):
 
     async def run(self, harness: VoiceCallClient, state: ConversationState) -> None:
         EXIT_TERMS = {"exit", "goodbye", "bye", "quit", "stop"}
+        MAX_TURNS = 8  # prevent infinite loops
 
-        logger.info("Waiting for assistant greeting...")
-        assistant_start_time = time.time()
-        await harness.wait_for_assistant_to_start_speaking(timeout_seconds=10)
-        await harness.wait_for_assistant_turn_end()
-        assistant_end_time = time.time()
-        logger.info("Assistant greeting received.")
-
-        # Transcribe latest assistant segment, if available
-        last_assistant = next(
-            (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
-            None,
-        )
-        if last_assistant:
-            assistant_audio = last_assistant[1]
-            assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
-            logger.info("Start ==== Assistant: %s", assistant_text)
-            state.audio.add_assistant(assistant_audio)
-            state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
-                            start_time=harness.current_assistant_turn_started_at or assistant_start_time,
-                            end_time=assistant_end_time)
-        
         # Conversation loop
-        conversation_turns = 0
-        max_turns = 8  # prevent infinite loops
+        conversation_turn = 0
+        while conversation_turn < MAX_TURNS:
+            # Await and transcribe assistant reply
+            assistant_start_time = time.time()
+            if conversation_turn == 0:
+                logger.info("Waiting for assistant greeting...")
+                await harness.wait_for_assistant_to_start_speaking(timeout_seconds=10)
+            await harness.wait_for_assistant_turn_end()
+            assistant_end_time = time.time()
+            logger.info("Assistant message received.")
 
-        while conversation_turns < max_turns:
-            conversation_turns += 1
+            last_assistant = next(
+                (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
+                None,
+            )
+            if last_assistant:
+                logger.info("Processing assistant message...")
+                assistant_audio = last_assistant[1]
+                assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
+                logger.info("Assistant: %s", assistant_text)
+                state.audio.add_assistant(assistant_audio)
+                state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
+                                     start_time=harness.current_assistant_turn_started_at or assistant_start_time,
+                                     end_time=assistant_end_time)
 
             logger.info("Generating customer response...")
             customer_response = await ask_proxy_human(aoai_client, state.history, self.system_prompt)
@@ -227,60 +228,42 @@ class ProxyHumanScenario(TestScenario):
             customer_audio, customer_start_time, customer_end_time = await send_text_to_server(harness, customer_response)
             harness.add_customer_audio(customer_audio)
             state.audio.add_proxy(customer_audio)
-            state.append_message("user", customer_response, time.time(), 
-                            start_time=customer_start_time,
-                            end_time=customer_end_time)
-            
+            state.append_message("user", customer_response, time.time(),
+                                 start_time=customer_start_time,
+                                 end_time=customer_end_time)
+
+            conversation_turn += 1
+
             # Exit condition
             if any(term in customer_response.lower() for term in EXIT_TERMS):
                 logger.info("Customer said goodbye; ending conversation.")
                 break
 
-            # Await and transcribe assistant reply
-            assistant_start_time = time.time()
-
-            await harness.wait_for_assistant_turn_end()
-
-            assistant_end_time = time.time()
-
-            last_assistant = next(
-                (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
-                None,
-            )
-            if last_assistant:
-                assistant_audio = last_assistant[1]
-                assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
-                logger.info("Assistant: %s", assistant_text)
-                state.audio.add_assistant(assistant_audio)
-                state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
-                                    start_time=harness.current_assistant_turn_started_at or assistant_start_time,
-                                    end_time=assistant_end_time)
-
-        logger.info("Conversation completed after %d turns.", conversation_turns)
+        logger.info("Conversation completed after %d turns.", conversation_turn)
 
         # Summary with timing information
         logger.info("Conversation Summary with Timing:")
         for timing in state.turn_timings:
             role = "Customer" if timing.role == "user" else "Assistant"
             logger.info("%s | %s | Duration: %.2fs | %s", 
-                    datetime.fromtimestamp(timing.start_time).strftime("%H:%M:%S.%f")[:-3],
-                    role, 
-                    timing.duration,
-                    timing.content)
+                        datetime.fromtimestamp(timing.start_time).strftime("%H:%M:%S.%f")[:-3],
+                        role,
+                        timing.duration,
+                        timing.content)
 
         self.output_transcript(state)
-            
+
     def output_transcript(self, state: ConversationState) -> None:
         """
         Save the conversation history to a JSON file.
         """
-       # Output the full transcript as a multiline string
-        transcript_lines = ["\n" + "="*60, "FULL CONVERSATION TRANSCRIPT", "="*60]
-        
+        # Output the full transcript as a multiline string
+        transcript_lines = ["\n" + "=" * 60, "FULL CONVERSATION TRANSCRIPT", "=" * 60]
+
         for msg in state.history:
             role = "Customer" if msg["role"] == "user" else "Assistant"
             timestamp = msg.get("start_datetime", msg.get("datetime", ""))
-            
+
             # Format each line of the transcript
             if timestamp:
                 # Extract just the time portion if it's a full datetime
@@ -291,9 +274,9 @@ class ProxyHumanScenario(TestScenario):
                 transcript_lines.append(f"[{time_part}] {role}: {msg['content']}")
             else:
                 transcript_lines.append(f"{role}: {msg['content']}")
-        
-        transcript_lines.append("="*60)
-        
+
+        transcript_lines.append("=" * 60)
+
         # Log the complete transcript as one multiline string
         logger.info("\n".join(transcript_lines))
 
