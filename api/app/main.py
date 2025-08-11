@@ -9,6 +9,15 @@ from typing import Optional
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import yaml
+ 
+# Configure root logging so application logs appear under dev server output
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+# Ensure root logger level is applied even if handlers already exist (e.g., dev server)
+logging.getLogger().setLevel(LOG_LEVEL)
 from azure.communication.callautomation import (AudioFormat,
                                                 MediaStreamingAudioChannelType,
                                                 MediaStreamingContentType,
@@ -176,6 +185,8 @@ async def agent_connect(websocket: WebSocket):
         turn_detection=AzureVoiceLiveTurnDetection(
             type="server_vad",
             create_response=True,
+            silence_duration_ms=800,
+            threshold=0.8,
         ),
         input_audio_noise_reduction=AzureVoiceLiveInputAudioNoiseReduction(
             type="azure_deep_noise_suppression"
