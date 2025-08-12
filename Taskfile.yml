@@ -13,6 +13,8 @@ tasks:
         devtunnel login
         devtunnel create aicontactcentre --allow-anonymous
         devtunnel port create -p 8000
+  setup:
+    deps: [setup:infra, setup:devtunnel]
   run:devtunnel:
     cmds:
       - devtunnel host aicontactcentre
