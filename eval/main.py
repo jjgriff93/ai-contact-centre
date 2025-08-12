@@ -10,10 +10,9 @@ from typing import Dict, List, Literal, Optional
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv_azd import load_azd_env
-from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
-                              text_to_speech_pcm)
-from evaluation.voice_call_client import VoiceCallClient
 from openai import AsyncAzureOpenAI
+from utils import ask_proxy_human, speech_to_text_pcm, text_to_speech_pcm
+from voice_call_client import VoiceCallClient
 
 # -----------------------------------------------------------------------------
 # Configuration & logging
@@ -322,7 +321,7 @@ async def run_test_suite() -> None:
             await asyncio.sleep(3)
 
             # Save outputs
-            output_dir = Path("test_outputs")
+            output_dir = Path(__file__).parent / "test_outputs"
             output_dir.mkdir(exist_ok=True)
 
             wav_path = output_dir / f"{scenario.name.replace(' ', '_')}_conversation.wav"

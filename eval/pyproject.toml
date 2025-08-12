@@ -1,0 +1,12 @@
+[project]
+name = "aicc-eval"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "azure-identity>=1.24.0",
+    "dotenv-azd>=0.3.0",
+    "openai>=1.99.9",
+    "websockets>=15.0.1",
+]
