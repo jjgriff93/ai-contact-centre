@@ -3,81 +3,39 @@ import base64
 import json
 import logging
 import os
-import uuid
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlencode, urlparse, urlunparse
 
-import yaml
- 
-# Configure root logging so application logs appear under dev server output
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-# Ensure root logger level is applied even if handlers already exist (e.g., dev server)
-logging.getLogger().setLevel(LOG_LEVEL)
-from azure.communication.callautomation import (AudioFormat,
-                                                MediaStreamingAudioChannelType,
-                                                MediaStreamingContentType,
-                                                MediaStreamingOptions,
-                                                StreamingTransportType)
-from azure.communication.callautomation.aio import CallAutomationClient
-from azure.eventgrid import EventGridEvent, SystemEventNames
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from dotenv_azd import AzdCommandNotFoundError, load_azd_env
-from fastapi import FastAPI, WebSocket
+from fastapi import Depends, FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from numpy import ndarray
-from pydantic import Field
-from pydantic_settings import BaseSettings
-from semantic_kernel.connectors.ai import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import ListenEvents, SendEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
 from semantic_kernel.contents import (AudioContent, ChatHistory,
                                       RealtimeAudioEvent)
-from semantic_kernel.functions import KernelArguments
-from semantic_kernel.prompt_template import (KernelPromptTemplate,
-                                             PromptTemplateConfig)
 
-from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
-                               AzureVoiceLiveInputAudioEchoCancellation,
-                               AzureVoiceLiveInputAudioNoiseReduction,
-                               AzureVoiceLiveInputAudioTranscription,
-                               AzureVoiceLiveTurnDetection,
-                               AzureVoiceLiveVoiceConfig,
-                               AzureVoiceLiveWebsocket)
+from .config import settings
+from .dependencies import get_acs_client
 from .plugins import CallPlugin, DeliveryPlugin
-from .sk_utils import export_chat_history
+from .routers import calls
+from .sk_utils import export_chat_history, get_agent
 
-
-class Settings(BaseSettings):
-    AZURE_ACS_ENDPOINT: str = Field(..., description='Azure Communication Services endpoint')
-    AZURE_AI_SERVICES_ENDPOINT: str = Field(..., description='Azure AI (Cognitive) Services endpoint')
-    AZURE_ACS_CALLBACK_HOST_URI: Optional[str] = Field(None, description='Callback host URI for webhooks. If not specified will use the requests host URI.')
-
-# Load environment variables from azd .env file when present (for local development)
-try:
-    load_azd_env()
-except AzdCommandNotFoundError as e:
-    logging.warning(f"No azd cli present. Assuming environment variables are already set.")
-
-settings = Settings() # type: ignore
 app = FastAPI()
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
-# Mount static files
+# Mount static files and add routers
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
+app.include_router(calls.router)
 
-# Get credential for authentication to Azure services (from Azure CLI locally and Managed Identity in Azure Container Apps)
-credential = DefaultAzureCredential()
-
-acs_client = CallAutomationClient(settings.AZURE_ACS_ENDPOINT, credential) # type: ignore
+# Configure root logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logging.getLogger().setLevel(LOG_LEVEL)
+logger = logging.getLogger(__name__)
 
 
 async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):
@@ -161,7 +119,7 @@ async def root():
 
 
 @app.websocket("/ws")
-async def agent_connect(websocket: WebSocket):
+async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)):
     """Websocket endpoint for connecting from ACS Audio Stream to the agent."""
     await websocket.accept()
     call_connection_id = websocket.headers.get("x-ms-call-connection-id")
@@ -169,71 +127,34 @@ async def agent_connect(websocket: WebSocket):
     if not call_connection_id:
         logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions won't work.")
 
-    realtime_agent = AzureVoiceLiveWebsocket(
-        endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
-        deployment_name="gpt-4o-realtime-preview",
-        ad_token_provider=get_bearer_token_provider(
-            credential,
-            "https://cognitiveservices.azure.com/.default",
-        ),
-        api_version="2025-05-01-preview",
+    # Load realtime agent from template and plugins
+    chat_history = ChatHistory()
+    realtime_agent = await get_agent(
+        template_name="DeliveryAgent",
         plugins=[
             CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-            DeliveryPlugin(),
-        ]
+            DeliveryPlugin()
+        ],
+        chat_history=chat_history,
+        agent_name="Archie"
     )
 
-    # Load the YAML template for the agent
-    # TODO: package up in a util method
-    yaml_path = Path(__file__).parent / "templates" / "DeliveryAgent.yaml"
-    with open(yaml_path, "r") as file:
-        yaml_content = file.read()
-        yaml_data = yaml.safe_load(yaml_content)
-    
-    prompt_template_config = PromptTemplateConfig(**yaml_data)
-    prompt_template = KernelPromptTemplate(prompt_template_config=prompt_template_config)
-    prompt_arguments = KernelArguments(agent_name="Archie")
-    rendered_prompt = await prompt_template.render(realtime_agent._kernel, prompt_arguments) # type: ignore
-    logger.info(f"Rendered prompt: {rendered_prompt}")
-
-    # Create the settings for the session
-    execution_settings = AzureVoiceLiveExecutionSettings(
-        instructions=rendered_prompt,
-        voice=AzureVoiceLiveVoiceConfig(
-            name="en-US-Andrew:DragonHDLatestNeural", # en-US-Alloy:DragonHDLatestNeural, en-GB-OllieMultilingualNeural
-            type="azure-standard",
-        ),
-        turn_detection=AzureVoiceLiveTurnDetection(
-            type="server_vad",
-            create_response=True,
-            silence_duration_ms=800,
-            threshold=0.8,
-        ),
-        input_audio_noise_reduction=AzureVoiceLiveInputAudioNoiseReduction(
-            type="azure_deep_noise_suppression"
-        ),
-        input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
-            type="server_echo_cancellation"
-        ),
-        # input_audio_transcription=AzureVoiceLiveInputAudioTranscription(
-        #     model="azure-fast-transcription"
-        # ),
-        function_choice_behavior=FunctionChoiceBehavior.Auto(),
-    )
-
-    chat_history = ChatHistory()
-    chat_history.add_system_message(execution_settings.instructions)
-
-    async def from_acs_to_realtime(client: RealtimeClientBase):
-        """Function that forwards the audio from the ACS client to the model."""
+    # Create the realtime client session
+    async with realtime_agent(create_response=True) as client:
+        # Start handling the messages from the realtime client with callback to forward the audio to acs
+        receive_task = asyncio.create_task(
+            handle_realtime_messages(websocket, realtime_agent, chat_history)
+        )
+        # Receive messages from the ACS client and send them to the realtime client
         while True:
             try:
                 # Receive data from the ACS client
                 stream_data = await websocket.receive_text()
                 data = json.loads(stream_data)
                 logger.debug(f"Received data from ACS client: {data}")
+
+                # If audio send it to the Realtime service
                 if data["kind"] == "AudioData":
-                    # send it to the Realtime service
                     await client.send(
                         event=RealtimeAudioEvent(
                             audio=AudioContent(
@@ -247,117 +168,8 @@ async def agent_connect(websocket: WebSocket):
                 logger.info("Websocket connection closed.")
                 break
 
-    # Create the realtime client session
-    async with realtime_agent(settings=execution_settings, create_response=True):
-        # start handling the messages from the realtime client with callback to forward the audio to acs
-        receive_task = asyncio.create_task(
-            handle_realtime_messages(websocket, realtime_agent, chat_history)
-        )
-        # receive messages from the ACS client and send them to the realtime client
-        await from_acs_to_realtime(realtime_agent)
         receive_task.cancel()
 
-
-@app.post("/api/incomingCall")
-async def incoming_call_handler(events: list[dict]):
-    """Handle incoming call events from Azure Communication Services."""
-    # This should be set in env when running locally to devtunnel uri
-    if not settings.AZURE_ACS_CALLBACK_HOST_URI:
-        # When running in container app, this will be the request host uri
-        logger.debug("AZURE_ACS_CALLBACK_HOST_URI is not set. Using container hostname.")
-        container_app_hostname = os.environ.get("CONTAINER_APP_HOSTNAME")
-        if not container_app_hostname:
-            logger.error("CONTAINER_APP_HOSTNAME is not set. Cannot determine callback base URI.")
-            raise ValueError("AZURE_ACS_CALLBACK_HOST_URI or CONTAINER_APP_HOSTNAME environment variable is required.")
-        callback_base_uri = "https://" + container_app_hostname
-    else:
-        callback_base_uri = settings.AZURE_ACS_CALLBACK_HOST_URI
-
-    callback_events_uri = f"{callback_base_uri}/api/callbacks"
-    logger.info(f"Call event received. Using callback events URI: {callback_events_uri}")
-    for event_dict in events:
-        event = EventGridEvent.from_dict(event_dict)
-        match event.event_type:
-            case SystemEventNames.EventGridSubscriptionValidationEventName:
-                logger.info("Validating subscription")
-                validation_code = event.data["validationCode"]
-                validation_response = {"validationResponse": validation_code}
-                return validation_response
-            case SystemEventNames.AcsIncomingCallEventName:
-                logger.debug("Incoming call received: data=%s", event.data)
-                caller_id = (
-                    event.data["from"]["phoneNumber"]["value"]
-                    if event.data["from"]["kind"] == "phoneNumber"
-                    else event.data["from"]["rawId"]
-                )
-                logger.info("incoming call handler caller id: %s", caller_id)
-                incoming_call_context = event.data["incomingCallContext"]
-                guid = uuid.uuid4()
-                query_parameters = urlencode({"callerId": caller_id})
-                callback_uri = f"{callback_events_uri}/{guid}?{query_parameters}"
-
-                parsed_url = urlparse(callback_events_uri)
-                websocket_url = urlunparse(("wss", parsed_url.netloc, "/ws", "", "", ""))
-
-                logger.debug("callback url: %s", callback_uri)
-                logger.debug("websocket url: %s", websocket_url)
-
-                answer_call_result = await acs_client.answer_call(
-                    incoming_call_context=incoming_call_context,
-                    operation_context="incomingCall",
-                    callback_url=callback_uri,
-                    media_streaming=MediaStreamingOptions(
-                        transport_url=websocket_url,
-                        transport_type=StreamingTransportType.WEBSOCKET,
-                        content_type=MediaStreamingContentType.AUDIO,
-                        audio_channel_type=MediaStreamingAudioChannelType.MIXED,
-                        start_media_streaming=True,
-                        enable_bidirectional=True,
-                        audio_format=AudioFormat.PCM24_K_MONO,
-                    ),
-                )
-                logger.info(f"Answered call for connection id: {answer_call_result.call_connection_id}")
-            case _:
-                logger.debug("Event type not handled: %s", event.event_type)
-                logger.debug("Event data: %s", event.data)
-
-
-@app.post("/api/callbacks/{contextId}")
-async def callbacks(contextId: str, events: list[dict]):
-    for event in events:
-        # Parsing callback events
-        event_data = event["data"]
-        call_connection_id = event_data["callConnectionId"]
-        logger.debug(
-            f"Received Event:-> {event['type']}, Correlation Id:-> {event_data['correlationId']}, ContextId:-> {contextId}, CallConnectionId:-> {call_connection_id}"
-        )
-        match event["type"]:
-            case "Microsoft.Communication.CallConnected":
-                call_connection_properties = await acs_client.get_call_connection(
-                    call_connection_id
-                ).get_call_properties()
-                media_streaming_subscription = call_connection_properties.media_streaming_subscription
-                logger.info(f"MediaStreamingSubscription:--> {media_streaming_subscription}")
-                logger.info(f"Received CallConnected event for connection id: {call_connection_id}")
-                logger.debug("CORRELATION ID:--> %s", event_data["correlationId"])
-                logger.debug("CALL CONNECTION ID:--> %s", event_data["callConnectionId"])
-            case "Microsoft.Communication.MediaStreamingStarted" | "Microsoft.Communication.MediaStreamingStopped":
-                logger.debug(
-                    f"Media streaming content type:--> {event_data['mediaStreamingUpdate']['contentType']}"
-                )
-                logger.debug(
-                    f"Media streaming status:--> {event_data['mediaStreamingUpdate']['mediaStreamingStatus']}"
-                )
-                logger.debug(
-                    f"Media streaming status details:--> {event_data['mediaStreamingUpdate']['mediaStreamingStatusDetails']}"  # noqa: E501
-                )
-            case "Microsoft.Communication.MediaStreamingFailed":
-                logger.warning(
-                    f"Code:->{event_data['resultInformation']['code']}, Subcode:-> {event_data['resultInformation']['subCode']}"  # noqa: E501
-                )
-                logger.warning(f"Message:->{event_data['resultInformation']['message']}")
-            case "Microsoft.Communication.CallDisconnected":
-                logger.debug(f"Call disconnected for connection id: {call_connection_id}")
 
 if __name__ == "__main__":
     import uvicorn
