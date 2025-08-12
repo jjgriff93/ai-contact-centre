@@ -8,6 +8,7 @@ from azure.identity.aio import (DefaultAzureCredential,
                                 get_bearer_token_provider)
 from fastapi import WebSocket
 from numpy import ndarray
+from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import ListenEvents, SendEvents
 from semantic_kernel.connectors.ai.realtime_client_base import \
@@ -59,7 +60,7 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
                 function_calls.append({
                     "name": item.function_name,
                     "plugin": item.plugin_name,
-                    "arguments": json.loads(item.arguments) # pyright: ignore[reportArgumentType]
+                    "arguments": json.loads(item.arguments)
                 })
             elif isinstance(item, FunctionResultContent):
                 function_calls.append({
@@ -71,11 +72,11 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
                 })
 
         if function_calls:
-            message_data["function_calls"] = function_calls # pyright: ignore[reportArgumentType]
+            message_data["function_calls"] = function_calls
 
         messages_formatted.append(message_data)
 
-    return messages_formatted # pyright: ignore[reportReturnType]
+    return messages_formatted
 
 
 async def get_agent(template_name: str, plugins: list[object], chat_history: ChatHistory, **kwargs) -> AzureVoiceLiveWebsocket:
@@ -96,8 +97,8 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
     prompt_template_config = PromptTemplateConfig(**yaml_data)
     prompt_template = KernelPromptTemplate(prompt_template_config=prompt_template_config)
     prompt_arguments = KernelArguments(**kwargs)
-    rendered_prompt = await prompt_template.render(realtime_agent._kernel, prompt_arguments) # type: ignore
 
+    rendered_prompt = await prompt_template.render(Kernel(), prompt_arguments)
     logger.debug(f"Rendered prompt: {rendered_prompt}")
 
     execution_settings = AzureVoiceLiveExecutionSettings(
@@ -128,7 +129,7 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
     chat_history.add_system_message(execution_settings.instructions)
 
     return AzureVoiceLiveWebsocket(
-        endpoint=settings.AZURE_AI_SERVICES_ENDPOINT, # type: ignore
+        endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
         deployment_name="gpt-4o-realtime-preview",
         ad_token_provider=get_bearer_token_provider(
             DefaultAzureCredential(),
@@ -165,14 +166,14 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
         match event.service_type:
             case ListenEvents.SESSION_CREATED:
                 logger.info("Session Created Message")
-                logger.debug(f"  Session Id: {event.service_event.session.id}")  # type: ignore
+                logger.debug(f"  Session Id: {event.service_event.session.id}")
             case ListenEvents.ERROR:
-                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
+                logger.error(f"  Error: {event.service_event.error}")
             case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
                 logger.info("Input Audio Buffer Cleared Message")
             case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
                 logger.debug(
-                    f"Voice activity detection started at {event.service_event.audio_start_ms} [ms]"  # type: ignore
+                    f"Voice activity detection started at {event.service_event.audio_start_ms} [ms]"
                 )
                 await websocket.send_text(
                     json.dumps(
@@ -180,15 +181,15 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                     )
                 )
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
-                logger.info(f" User:-- {event.service_event.transcript}")  # type: ignore
+                logger.info(f" User:-- {event.service_event.transcript}")
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
+                logger.error(f"  Error: {event.service_event.error}")
             case ListenEvents.RESPONSE_DONE:
                 logger.info("Response Done Message")
-                logger.debug(f"  Response Id: {event.service_event.response.id}")  # type: ignore
-                if event.service_event.response.status_details:  # type: ignore
+                logger.debug(f"  Response Id: {event.service_event.response.id}")
+                if event.service_event.response.status_details:
                     logger.debug(
-                        f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"  # type: ignore
+                        f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"
                     )
                 # Send chat history (including function calls) to client
                 await websocket.send_text(
@@ -201,13 +202,13 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                 )
                 idx_first_msg_to_send = len(chat_history.messages)
             case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
-                logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
+                logger.info(f" AI:-- {event.service_event.transcript}")
                 # Add assistant message to chat history
-                chat_history.add_assistant_message(event.service_event.transcript) # pyright: ignore[reportOptionalMemberAccess]
+                chat_history.add_assistant_message(event.service_event.transcript)
             # case ListenEvents.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
                 # Add function call to chat history
                 # Disabling for now - redundant with function result?
                 # chat_history.add_tool_message([event.function_call])
             case SendEvents.CONVERSATION_ITEM_CREATE:
                 # Add function call result to chat history
-                chat_history.add_tool_message([event.function_result]) # pyright: ignore[reportAttributeAccessIssue]
+                chat_history.add_tool_message([event.function_result])
