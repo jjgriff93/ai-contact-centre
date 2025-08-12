@@ -35,7 +35,7 @@ async def incoming_call_handler(events: list[dict], acs_client=Depends(get_acs_c
         callback_base_uri = settings.AZURE_ACS_CALLBACK_HOST_URI
 
     # Set the callback events URI to our API route for responding to call events
-    callback_events_uri = f"{callback_base_uri}/api/callbacks"
+    callback_events_uri = f"{callback_base_uri}/calls/callbacks"
     logger.info(f"Call event received. Using callback events URI: {callback_events_uri}")
   
     for event_dict in events:

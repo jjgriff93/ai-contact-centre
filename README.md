@@ -59,7 +59,7 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
   task run:api
   ```
 
-- Configure an Event Grid subscription for ACS to send events to your API by following [these instructions](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/incoming-call-notification), selecting Webhook for endpoint type, and supplying your devtunnel URL with the suffix `/api/incomingCall`.
+- Configure an Event Grid subscription for ACS to send events to your API by following [these instructions](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/incoming-call-notification), selecting Webhook for endpoint type, and supplying your devtunnel URL with the suffix `/calls/incoming`.
   > Your API needs to be running for the validation handshake to succeed.
 
 #### Each time
@@ -74,7 +74,7 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
 
 ### 5. Use Remote API
 
-Like with the local API, set up an Event Grid subscription for the remote API to respond to ACS `IncomingCall`, instead supplying the Container App's URL with the suffix `/api/incomingCall`.
+Like with the local API, set up an Event Grid subscription for the remote API to respond to ACS `IncomingCall`, instead supplying the Container App's URL with the suffix `/calls/incoming`.
 
 > Disable the local API event grid subscription to avoid conflicts.
 

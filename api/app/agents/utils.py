@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 from pathlib import Path
@@ -5,20 +6,25 @@ from pathlib import Path
 import yaml
 from azure.identity.aio import (DefaultAzureCredential,
                                 get_bearer_token_provider)
+from fastapi import WebSocket
+from numpy import ndarray
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
+from semantic_kernel.connectors.ai.open_ai import ListenEvents, SendEvents
+from semantic_kernel.connectors.ai.realtime_client_base import \
+    RealtimeClientBase
 from semantic_kernel.contents import (ChatHistory, FunctionCallContent,
                                       FunctionResultContent)
 from semantic_kernel.functions import KernelArguments
 from semantic_kernel.prompt_template import (KernelPromptTemplate,
                                              PromptTemplateConfig)
 
+from ..config import settings
 from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
                                AzureVoiceLiveInputAudioEchoCancellation,
                                AzureVoiceLiveInputAudioNoiseReduction,
                                AzureVoiceLiveTurnDetection,
                                AzureVoiceLiveVoiceConfig,
                                AzureVoiceLiveWebsocket)
-from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +59,7 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
                 function_calls.append({
                     "name": item.function_name,
                     "plugin": item.plugin_name,
-                    "arguments": json.loads(item.arguments)
+                    "arguments": json.loads(item.arguments) # pyright: ignore[reportArgumentType]
                 })
             elif isinstance(item, FunctionResultContent):
                 function_calls.append({
@@ -65,11 +71,11 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
                 })
 
         if function_calls:
-            message_data["function_calls"] = function_calls
+            message_data["function_calls"] = function_calls # pyright: ignore[reportArgumentType]
 
         messages_formatted.append(message_data)
 
-    return messages_formatted
+    return messages_formatted # pyright: ignore[reportReturnType]
 
 
 async def get_agent(template_name: str, plugins: list[object], chat_history: ChatHistory, **kwargs) -> AzureVoiceLiveWebsocket:
@@ -112,6 +118,7 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
         input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
             type="server_echo_cancellation"
         ),
+        # TODO: adding transcription currently causes stream to disconnect. Investigate
         # input_audio_transcription=AzureVoiceLiveInputAudioTranscription(
         #     model="azure-fast-transcription"
         # ),
@@ -131,3 +138,76 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
         plugins=plugins,
         settings=execution_settings
     )
+
+async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):
+    """Function that handles the messages from the Realtime service.
+
+    This function only handles the non-audio messages.
+    Audio is done through the callback so that it is faster and smoother.
+    """
+
+    async def from_realtime_to_acs(audio: ndarray):
+        """Function that forwards the audio from the model to the websocket of the ACS client."""
+        logger.debug("Audio received from the model, sending to ACS client")
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "kind": "AudioData",
+                    "audioData": {
+                        "data": base64.b64encode(audio.tobytes()).decode("utf-8")
+                    },
+                }
+            )
+        )
+
+    idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
+    async for event in client.receive(audio_output_callback=from_realtime_to_acs):
+        match event.service_type:
+            case ListenEvents.SESSION_CREATED:
+                logger.info("Session Created Message")
+                logger.debug(f"  Session Id: {event.service_event.session.id}")  # type: ignore
+            case ListenEvents.ERROR:
+                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
+            case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
+                logger.info("Input Audio Buffer Cleared Message")
+            case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+                logger.debug(
+                    f"Voice activity detection started at {event.service_event.audio_start_ms} [ms]"  # type: ignore
+                )
+                await websocket.send_text(
+                    json.dumps(
+                        {"Kind": "StopAudio", "AudioData": None, "StopAudio": {}}
+                    )
+                )
+            case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
+                logger.info(f" User:-- {event.service_event.transcript}")  # type: ignore
+            case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
+                logger.error(f"  Error: {event.service_event.error}")  # type: ignore
+            case ListenEvents.RESPONSE_DONE:
+                logger.info("Response Done Message")
+                logger.debug(f"  Response Id: {event.service_event.response.id}")  # type: ignore
+                if event.service_event.response.status_details:  # type: ignore
+                    logger.debug(
+                        f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"  # type: ignore
+                    )
+                # Send chat history (including function calls) to client
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "kind": "ChatHistory",
+                            "data": export_chat_history(chat_history, from_index=idx_first_msg_to_send)
+                        }
+                    )
+                )
+                idx_first_msg_to_send = len(chat_history.messages)
+            case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
+                logger.info(f" AI:-- {event.service_event.transcript}")  # type: ignore
+                # Add assistant message to chat history
+                chat_history.add_assistant_message(event.service_event.transcript) # pyright: ignore[reportOptionalMemberAccess]
+            # case ListenEvents.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
+                # Add function call to chat history
+                # Disabling for now - redundant with function result?
+                # chat_history.add_tool_message([event.function_call])
+            case SendEvents.CONVERSATION_ITEM_CREATE:
+                # Add function call result to chat history
+                chat_history.add_tool_message([event.function_result]) # pyright: ignore[reportAttributeAccessIssue]
