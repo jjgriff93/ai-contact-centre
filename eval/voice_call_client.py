@@ -1,10 +1,11 @@
+import asyncio
 import base64
 import json
 import logging
 import time
 import wave
-from typing import List, Optional, Tuple, Literal, Dict
-import asyncio
+from typing import Dict, List, Literal, Optional, Tuple
+
 import websockets
 
 logging.basicConfig(
