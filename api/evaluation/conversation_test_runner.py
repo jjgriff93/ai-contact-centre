@@ -17,7 +17,7 @@ from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
                               text_to_speech_pcm,
                               convert_json_to_jsonl)
 from evaluation.voice_call_client import VoiceCallClient
-from evaluation.metrics import ConversationTurnsEvaluator
+from evaluation.metrics import FunctionCallEvaluator, ConversationEvaluator
 
 
 # -----------------------------------------------------------------------------
@@ -339,15 +339,15 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
     eval_jsonl_path = convert_json_to_jsonl(eval_data_path)
 
     # Run evaluation across all test cases
-    # os.environ["PF_WORKER_COUNT"] = "1"  # Max concurrency for eval target run
+    evaluation_name = f"conversation-tests-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    # os.environ["PF_WORKER_COUNT"] = "1"  # Max concurrency for eval target run  #TODO: useful?
     result = evaluate(
-        # evaluation_name=f"conversation-tests-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        evaluation_name="eval-test-humanproxy",
+        evaluation_name=evaluation_name,
         data=eval_jsonl_path,
         target=ProxyHumanConversator(max_turns=8, output_dir=output_dir),
         evaluators={
-            # "function_calls": FunctionCallEvaluator(),
-            "conversation_turns": ConversationTurnsEvaluator()
+            "function_calls": FunctionCallEvaluator(),
+            "conversation": ConversationEvaluator()
         },
         evaluator_config={
             "default": {
@@ -356,12 +356,13 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
                     "instructions": "${data.instructions}",
                     "function_calls": "${target.function_calls}",
                     "transcription": "${target.transcription}",
+                    "expected_function_calls": "${data.expected_function_calls}",
+                    "unexpected_function_calls": "${data.unexpected_function_calls}"
                 }
             },
         },
         azure_ai_project=azure_ai_project_endpoint,
-        # Output path for evaluation results
-        # output_path="./myevalresults.json",
+        output_path=output_dir / f"eval_results_{evaluation_name}.json",
     )
 
     logger.info("Evaluation completed. Summary: %s", result)

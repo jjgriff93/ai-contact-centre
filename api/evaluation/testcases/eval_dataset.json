@@ -1,14 +1,27 @@
 [
     {
-        "scenario_name": "basic_conversation_1",
-        "instructions": "You are a grocery shopper talking on the phone to a customer support agent. Say hello at the beginning of the conversation. You want to buy two Fuji apples and have it delivered on Wed 23rd at 4pm. Stay in role, never change from grocery shopper. Your questions and responses must be very short. When you are done say 'goodbye'. Your address is 21 Baker Street, London but only say it when asked.",
+        "scenario_name": "basic_conversation_2",
+        "instructions": "You are a grocery shopper talking on the phone to a customer support agent. Say hello at the beginning of the conversation. You want to buy a fridge and have it delivered on Mon 18th in the morning. It cannot be delivered on Tuesday either because you won't be at home. If there is no other option, Thu morning would work for you, but only if it's before 11am. Stay in role, never change from grocery shopper. Your questions and responses must be very short. When you are done say 'goodbye'.",
         "expected_function_calls": [
             {
-                "plugin_name": "DeliveryPlugin",
+                "plugin": "delivery",
                 "function_name": "get_available_slots_for_delivery",
                 "arguments": {
-                    "date": "2025-08-23"
+                    "date": "2025-08-18"
                 }
+            },
+            {
+                "plugin": "delivery",
+                "function_name": "get_available_slots_for_delivery",
+                "arguments": {
+                    "date": "2025-08-20"
+                }
+            }
+        ],
+        "unexpected_function_calls": [
+            {
+                "plugin": "call",
+                "function_name": "handoff"
             }
         ]
     }
