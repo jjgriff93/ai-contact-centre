@@ -181,7 +181,7 @@ resource eventGridSystemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' exis
 //     destination: {
 //       endpointType: 'WebHook'
 //       properties: {
-//         endpointUrl: 'https://${api.outputs.fqdn}/api/incomingCall'
+//         endpointUrl: 'https://${api.outputs.fqdn}/calls/incoming'
 //       }
 //     }
 //     filter: {
