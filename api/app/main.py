@@ -13,7 +13,6 @@ from semantic_kernel.contents import (AudioContent, ChatHistory,
 
 from .agents.plugins import CallPlugin, DeliveryPlugin
 from .agents.utils import get_agent, handle_realtime_messages
-from .config import settings
 from .dependencies import get_acs_client
 from .routers import calls
 
@@ -65,7 +64,7 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
     async with realtime_agent(create_response=True) as client:
         # Start handling the messages from the realtime client with callback to forward the audio to acs
         receive_task = asyncio.create_task(
-            handle_realtime_messages(websocket, realtime_agent, chat_history)
+            handle_realtime_messages(websocket, client, chat_history)
         )
         # Receive messages from the ACS client and send them to the realtime client
         while True:

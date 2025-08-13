@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Annotated, Optional
 
 from azure.communication.callautomation.aio import CallAutomationClient
 from semantic_kernel.functions import kernel_function
@@ -16,17 +16,19 @@ class CallPlugin:
         self._call_connection_id = call_connection_id
 
     @kernel_function
-    def transfer_to_human(self):
+    def transfer_to_human(
+        self,
+        call_summary: Annotated[str, "A brief summary of the interaction with the customer for the human agent to review."]
+    ) -> None:
         """Transfer the call to a human colleague."""
-        logger.info(f"@ transfer_to_human called")
+        logger.info(f"@ transfer_to_human called with summary: {call_summary}")
 
     @kernel_function
     async def hangup(self):
         """When the user is done, say goodbye and then call this function."""
-        logger.info("@ hangup has been called!")
+        logger.info("@ hangup has been called")
 
         if not self._call_connection_id:
-            logger.warning("No call connection ID available to hang up the call.")
             raise ValueError("No call connection ID available to hang up the call.")
 
         # Hang up the call for everyone in the call
