@@ -1,5 +1,5 @@
 import io
-import os
+import json
 import wave
 from typing import List
 
@@ -8,7 +8,7 @@ from openai import AsyncAzureOpenAI
 
 async def speech_to_text_pcm(client: AsyncAzureOpenAI, audio_data: bytes) -> str:
     """Convert PCM audio to text using Azure OpenAI (gpt-4o-mini-transcribe) directly from bytes."""
-     # Build a WAV file in-memory from the raw PCM
+    # Build a WAV file in-memory from the raw PCM
     wav_bytes = io.BytesIO()
     # PCM: 24kHz, 16-bit, mono, little-endian
     with wave.open(wav_bytes, "wb") as wf:
@@ -17,7 +17,7 @@ async def speech_to_text_pcm(client: AsyncAzureOpenAI, audio_data: bytes) -> str
         wf.setframerate(24000)  # 24KHz
         wf.writeframes(audio_data)  # no copy; writes directly from your PCM buffer
     wav_bytes.seek(0)
-    
+
     file_tuple = ("audio.wav", wav_bytes, "audio/wav")
 
     response = await client.audio.transcriptions.create(
@@ -30,10 +30,10 @@ async def speech_to_text_pcm(client: AsyncAzureOpenAI, audio_data: bytes) -> str
 
 async def text_to_speech_pcm(client: AsyncAzureOpenAI, text: str, chunk_size: int = 100):
     """Convert text to PCM audio chunks."""
-    
+
     bytes_per_chunk = 9600 #PCM_RATE * 2 * chunk_size // 1000  # 16-bit PCM
     buffer = b""
-    
+
     async with client.audio.speech.with_streaming_response.create(
         model="tts",
         voice="fable",
@@ -51,7 +51,7 @@ async def text_to_speech_pcm(client: AsyncAzureOpenAI, text: str, chunk_size: in
 
 async def ask_proxy_human(client: AsyncAzureOpenAI, history: List, system_message:str = None) -> str:
     """Generate next user utterance using Azure OpenAI."""
-    
+
     proxy_system = system_message or (
         "You are a grocery shopper talking on the phone to a customer support agent "
         "Say hello at the beginning of the conversation. You want to buy two Fuji apples and have it delivered "
@@ -59,7 +59,7 @@ async def ask_proxy_human(client: AsyncAzureOpenAI, history: List, system_messag
         "be very short. When you are done say 'goodbye'. "
         "Your address is 21 Baker Street, London but only say it when asked."
     )
-    
+
     # Build conversation context
     prompt = "You are the customer. Respond to the Shop Assistant.\n\n"
     for message in history:
@@ -67,19 +67,34 @@ async def ask_proxy_human(client: AsyncAzureOpenAI, history: List, system_messag
             prompt += f"Shop Assistant: {message['content']}\n"
         elif message["role"] == "user":
             prompt += f"You: {message['content']}\n"
-    
+
     prompt += "Respond to the Shop Assistant: "
-    
+
     messages = [
         {"role": "system", "content": proxy_system},
         {"role": "user", "content": prompt}
     ]
-    
+
     response = await client.chat.completions.create(
         model="gpt-4.1",
         messages=messages,
         temperature=0.7,
         max_tokens=64,
     )
-    
+
     return response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+
+
+def convert_json_to_jsonl(json_path: str) -> str:
+    """Convert a JSON file (list of dicts) to JSONL format."""
+
+    with open(json_path, encoding="utf-8") as f_input:
+        json_data = json.load(f_input)
+
+    output_path = json_path.replace(".json", ".jsonl")
+    with open(output_path, "w", encoding="utf-8") as f_output:
+        for entry in json_data:
+            json.dump(entry, f_output)
+            f_output.write("\n")
+
+    return output_path

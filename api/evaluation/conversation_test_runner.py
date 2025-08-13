@@ -9,14 +9,16 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from azure.ai.evaluation import AzureAIProject
+from azure.ai.evaluation import evaluate
 from dotenv_azd import load_azd_env
 from openai import AsyncAzureOpenAI
 
 from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
-                              text_to_speech_pcm)
+                              text_to_speech_pcm,
+                              convert_json_to_jsonl)
 from evaluation.voice_call_client import VoiceCallClient
-from evaluation.metrics import TestSuiteEvaluator
+from evaluation.metrics import ConversationTurnsEvaluator
+
 
 # -----------------------------------------------------------------------------
 # Configuration & logging
@@ -178,95 +180,131 @@ class TestScenario:
         raise NotImplementedError
 
 
-class ProxyHumanScenario(TestScenario):
-    """Test scenario for proxy human interaction."""
+class ProxyHumanConversator:
+    """Test scenario for proxy human interaction that serves as an evaluation target."""
 
-    def __init__(self, name: str, system_prompt: Optional[str] = None) -> None:
-        super().__init__(
-            name=name,
-            description="Agent simulates a human customer interacting with the voice AI system.",
-        )
-        self.system_prompt = system_prompt or (
-            "You are a grocery shopper talking on the phone to a customer support agent. "
-            "Say hello at the beginning of the conversation. You want to buy two Fuji apples and have it delivered "
-            "on Wed 23rd at 4pm. Stay in role, never change from grocery shopper. Your questions and responses must "
-            "be very short. When you are done say 'goodbye'. "
-            "Your address is 21 Baker Street, London but only say it when asked."
-        )
+    def __init__(self, output_dir: str, max_turns: int = 8) -> None:
+        self.output_dir = output_dir
+        self.max_turns = max_turns
+        self.EXIT_TERMS = {"exit", "goodbye", "bye", "quit", "stop"}
 
-    async def run(self, harness: VoiceCallClient, state: ConversationState) -> None:
-        EXIT_TERMS = {"exit", "goodbye", "bye", "quit", "stop"}
-        MAX_TURNS = 8  # prevent infinite loops
-
-        # Conversation loop
-        conversation_turn = 0
-        while conversation_turn < MAX_TURNS:
-
-            # Await and transcribe assistant reply
-            assistant_start_time = time.time()
-            if conversation_turn == 0:
-                logger.info("Waiting for assistant greeting...")
-                await harness.wait_for_assistant_to_start_speaking(timeout_seconds=10)
-            await harness.wait_for_assistant_turn_end()
-            assistant_end_time = time.time()
-            logger.info("Assistant message received.")
-
-            last_assistant = next(
-                (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
-                None,
-            )
-            if last_assistant:
-                logger.info("Processing assistant message...")
-                assistant_audio = last_assistant[1]
-                assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
-                logger.info("Assistant: %s", assistant_text)
-                state.audio.add_assistant(assistant_audio)
-                state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
-                                     start_time=harness.current_assistant_turn_started_at or assistant_start_time,
-                                     end_time=assistant_end_time)
-
-            logger.info("Generating customer response...")
-            customer_response = await ask_proxy_human(aoai_client, state.history, self.system_prompt)
-            logger.info("Customer: %s", customer_response)
-
-            # Send response audio
-            customer_audio, customer_start_time, customer_end_time = await send_text_to_server(harness, customer_response)
-            harness.add_customer_audio(customer_audio)
-            state.audio.add_proxy(customer_audio)
-            state.append_message("user", customer_response, time.time(),
-                                 start_time=customer_start_time,
-                                 end_time=customer_end_time)
-
-            conversation_turn += 1
-
-            # Exit condition
-            if any(term in customer_response.lower() for term in EXIT_TERMS):
-                logger.info("Customer said goodbye; ending conversation.")
-                break
-
-        logger.info("Conversation completed after %d turns.", conversation_turn)
-
-        # Log function calls
-        state.function_calls = get_function_calls_from_chat_history(harness.chat_history)
-
-        # Summary with timing information
-        logger.info("Conversation Summary with Timing:")
-        for timing in state.turn_timings:
-            role = "Customer" if timing.role == "user" else "Assistant"
-            logger.info("%s | %s | Duration: %.2fs | %s", 
-                        datetime.fromtimestamp(timing.start_time).strftime("%H:%M:%S.%f")[:-3],
-                        role,
-                        timing.duration,
-                        timing.content)
-
-        self.output_transcript(state)
-
-    def output_transcript(self, state: ConversationState) -> None:
+    def __call__(self, *, scenario_name: str, instructions: str, **kwargs) -> Dict[str, object]:
         """
-        Save the conversation history to a JSON file.
+        This method simulates a call center conversation
+        by interacting with the voice AI system and generating user responses.
+        This is used as "Evaluation Target" by the evaluation framework.
+
+        Args:
+            instructions (str): instructions for the simulated user
+
+        Returns:
+            Dict[str, object]: conversation results including history and function calls
+        """
+        # Run the conversation
+        state = asyncio.run(self._run_conversation(scenario_name, instructions))
+
+        # Return outputs for evaluation
+        return {
+            "function_calls": state.function_calls,
+            "transcription": state.history,
+        }
+
+    async def _run_conversation(self, scenario_name: str, scenario_instructions: str) -> Dict[str, object]:
+        """Run the conversation and return final state."""
+
+        harness = VoiceCallClient()
+        state = ConversationState()
+        receive_task: Optional[asyncio.Task] = None
+
+        try:
+            await harness.connect(f"test-evaluation-{int(time.time())}")
+            receive_task = asyncio.create_task(harness.receive_messages())
+
+            # Run the conversation
+            conversation_turn = 0
+            while conversation_turn < self.max_turns:
+                # Await and transcribe assistant reply
+                assistant_start_time = time.time()
+                if conversation_turn == 0:
+                    logger.info("Waiting for assistant greeting...")
+                    await harness.wait_for_assistant_to_start_speaking(timeout_seconds=10)
+                await harness.wait_for_assistant_turn_end()
+                assistant_end_time = time.time()
+                logger.info("Assistant message received.")
+
+                last_assistant = next(
+                    (seg for seg in reversed(harness.conversation_segments) if seg[0] == "assistant"),
+                    None,
+                )
+                if last_assistant:
+                    logger.info("Processing assistant message...")
+                    assistant_audio = last_assistant[1]
+                    assistant_text = await speech_to_text_pcm(aoai_client, assistant_audio)
+                    logger.info("Assistant: %s", assistant_text)
+                    state.audio.add_assistant(assistant_audio)
+                    state.append_message("assistant", assistant_text, harness.last_assistant_activity_time,
+                                         start_time=harness.current_assistant_turn_started_at or assistant_start_time,
+                                         end_time=assistant_end_time)
+
+                logger.info("Generating customer response...")
+                customer_response = await ask_proxy_human(aoai_client, state.history, scenario_instructions)
+                logger.info("Customer: %s", customer_response)
+
+                # Send response audio
+                customer_audio, customer_start_time, customer_end_time = await send_text_to_server(harness, customer_response)
+                harness.add_customer_audio(customer_audio)
+                state.audio.add_proxy(customer_audio)
+                state.append_message("user", customer_response, time.time(),
+                                     start_time=customer_start_time,
+                                     end_time=customer_end_time)
+
+                conversation_turn += 1
+
+                # Exit condition
+                if any(term in customer_response.lower() for term in self.EXIT_TERMS):
+                    logger.info("Customer said goodbye; ending conversation.")
+                    break
+
+            logger.info("Conversation completed after %d turns.", conversation_turn)
+
+            # Give the server a moment to finish any trailing work
+            await asyncio.sleep(3)
+
+            # Extract function calls from chat history
+            state.function_calls = self._get_function_calls_from_chat_history(harness.chat_history)
+
+            # Store results and output transcript summary 
+            wav_path = self.output_dir / f"{scenario_name}_conversation.wav"
+            await harness.save_conversation_audio(str(wav_path))
+
+            transcript_path = self.output_dir / f"{scenario_name}_transcript.json"
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                json.dump(state.history, f, indent=2, ensure_ascii=False)
+            logger.info("Transcript saved to %s", transcript_path)
+
+            self._output_transcript(scenario_name, state)
+
+        finally:
+            if receive_task:
+                receive_task.cancel()
+                try:
+                    await receive_task
+                except asyncio.CancelledError:
+                    pass
+            await harness.disconnect()
+
+        return state
+
+    def _get_function_calls_from_chat_history(self, chat_history: List[Dict[str, object]]) -> List[Dict[str, object]]:
+        """Extract function calls from the chat history exported from Semantic Kernel app."""
+        return [fcall for msg in chat_history if msg["role"] == "tool" for fcall in msg["function_calls"]]
+
+    def _output_transcript(self, scenario_name: str, state: ConversationState) -> None:
+        """
+        Print a summary of the conversation history
         """
         # Output the full transcript as a multiline string
-        transcript_lines = ["\n" + "=" * 60, "FULL CONVERSATION TRANSCRIPT", "=" * 60]
+        transcript_lines = ["\n" + "=" * 60, f"SCENARIO: {scenario_name} ", "FULL CONVERSATION TRANSCRIPT", "=" * 60]
 
         for msg in state.history:
             role = "Customer" if msg["role"] == "user" else "Assistant"
@@ -289,83 +327,51 @@ class ProxyHumanScenario(TestScenario):
         logger.info("\n".join(transcript_lines))
 
 
-def get_function_calls_from_chat_history(chat_history: List[Dict[str, object]]) -> List[Dict[str, object]]:
-    """Extract function calls from the chat history exported from Semantic Kernel app."""
-    return [fcall for msg in chat_history if msg["role"] == "tool" for fcall in msg["function_calls"]]
+def run_test_suite(azure_ai_project_endpoint: str) -> None:
+    """Run a suite of test scenarios using the evaluate() method."""
 
-
-async def run_test_suite(azure_ai_client: AzureAIProject) -> None:
-    """Run a suite of test scenarios."""
-
-    evaluator = TestSuiteEvaluator(azure_ai_client)
-
-    # Load test cases
     testcases_dir = Path(__file__).parent / "testcases"
-    eval_data_path = testcases_dir / "eval_dataset.json"
-    with open(eval_data_path, "r", encoding="utf-8") as f:
-        scenarios = json.load(f)
-
     output_dir = testcases_dir / "test_outputs"
     output_dir.mkdir(exist_ok=True)
 
-    # Run test cases
-    for scenario_data in scenarios:
+    # Prepare test cases - evaluation framework expects jsonl format
+    eval_data_path = str(testcases_dir / "eval_dataset.json")
+    eval_jsonl_path = convert_json_to_jsonl(eval_data_path)
 
-        simulation = ProxyHumanScenario(
-            name=scenario_data["scenarioName"].replace(' ', '_'),
-            system_prompt=scenario_data["instructions"]
-        )
+    # Run evaluation across all test cases
+    # os.environ["PF_WORKER_COUNT"] = "1"  # Max concurrency for eval target run
+    result = evaluate(
+        # evaluation_name=f"conversation-tests-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        evaluation_name="eval-test-humanproxy",
+        data=eval_jsonl_path,
+        target=ProxyHumanConversator(max_turns=8, output_dir=output_dir),
+        evaluators={
+            # "function_calls": FunctionCallEvaluator(),
+            "conversation_turns": ConversationTurnsEvaluator()
+        },
+        evaluator_config={
+            "default": {
+                "column_mapping": {
+                    "scenario_name": "${data.scenario_name}",
+                    "instructions": "${data.instructions}",
+                    "function_calls": "${target.function_calls}",
+                    "transcription": "${target.transcription}",
+                }
+            },
+        },
+        azure_ai_project=azure_ai_project_endpoint,
+        # Output path for evaluation results
+        # output_path="./myevalresults.json",
+    )
 
-        banner = "=" * 50
-        logger.info("\n%s\nRunning: %s\nDescription: %s\n%s", banner, simulation.name, banner)
-
-        harness = VoiceCallClient()
-        state = ConversationState()
-        receive_task: Optional[asyncio.Task] = None
-
-        try:
-            await harness.connect(f"test-{simulation.name}")
-            receive_task = asyncio.create_task(harness.receive_messages())
-
-            await simulation.run(harness, state)
-
-            # Give the server a moment to finish any trailing work
-            await asyncio.sleep(3)
-
-            evaluator.evaluate_scenario(name=simulation.name, function_calls=state.function_calls,
-                                        expected_function_calls=scenario_data.get("expected_function_calls", []),
-                                        unexpected_function_calls=scenario_data.get("unexpected_function_calls", []))
-
-            # Save outputs
-            wav_path = output_dir / f"{simulation.name}_conversation.wav"
-            await harness.save_conversation_audio(str(wav_path))
-
-            transcript_path = output_dir / f"{simulation.name}_transcript.json"
-            with open(transcript_path, "w", encoding="utf-8") as f:
-                json.dump(state.history, f, indent=2, ensure_ascii=False)
-            logger.info("Transcript saved to %s", transcript_path)
-
-        finally:
-            if receive_task:
-                receive_task.cancel()
-                try:
-                    await receive_task
-                except asyncio.CancelledError:
-                    pass
-            await harness.disconnect()
-
-    # TODO: aggregate results
+    logger.info("Evaluation completed. Summary: %s", result)
 
 
 if __name__ == "__main__":
 
     try:
-        azure_ai_client = AzureAIProject(
-            subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"],
-            resource_group_name=os.environ["AZURE_RESOURCE_GROUP"],
-            project_name=os.environ["AZURE_AI_PROJECT_NAME"],
-        )
+        azure_ai_project_endpoint = os.environ["AZURE_AI_PROJECT_ENDPOINT"]
     except KeyError as e:
         raise ValueError(f"Missing environment variable: {e}") from e
 
-    asyncio.run(run_test_suite(azure_ai_client))
+    run_test_suite(azure_ai_project_endpoint)
