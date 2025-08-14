@@ -9,6 +9,16 @@
                 "arguments": {
                     "date": "2025-08-23"
                 }
+            },
+            {
+                "plugin": "delivery",
+                "function_name": "book_delivery_slot"
+            }
+        ],
+        "unexpected_function_calls": [
+            {
+                "plugin": "call",
+                "function_name": "handoff"
             }
         ]
     },
@@ -29,6 +39,10 @@
                 "arguments": {
                     "date": "2025-08-20"
                 }
+            },
+            {
+                "plugin": "delivery",
+                "function_name": "book_delivery_slot"
             }
         ],
         "unexpected_function_calls": [
@@ -44,7 +58,7 @@
         "expected_function_calls": [
             {
                 "plugin": "call",
-                "name": "handoff"
+                "function_name": "handoff"
             }
         ],    
         "unexpected_function_calls": [

@@ -16,6 +16,10 @@
                 "arguments": {
                     "date": "2025-08-20"
                 }
+            },
+            {
+                "plugin": "delivery",
+                "function_name": "book_delivery_slot"
             }
         ],
         "unexpected_function_calls": [

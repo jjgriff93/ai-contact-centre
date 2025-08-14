@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from azure.ai.evaluation import evaluate
+from azure.ai.evaluation import evaluate, ContentSafetyEvaluator
 from dotenv_azd import load_azd_env
 from openai import AsyncAzureOpenAI
 
@@ -140,6 +140,20 @@ class ConversationState:
     def timed_out(self, threshold_seconds: float = 10.0) -> bool:
         return (time.time() - self.last_activity_ts) > threshold_seconds
 
+    def get_conversation_for_evaluation(self) -> Dict[str, object]:
+        """
+        Get the conversation history in the format required for evaluation.
+        https://learn.microsoft.com/en-us/azure/ai-foundry/how-to/develop/evaluate-sdk#conversation-support-for-text
+        """
+
+        conversation = {
+            "messages": [
+                {"content": entry["content"], "role": entry["role"]}
+                for entry in self.history
+            ]
+        }
+        return conversation
+
 
 async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
     """
@@ -166,18 +180,6 @@ async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
     logger.debug("Sent TTS audio (%d bytes) + %dms silence.", len(audio) - len(post_silence), silence_ms)
 
     return bytes(audio), start_time, end_time
-
-
-class TestScenario:
-    """Base class for test scenarios."""
-
-    def __init__(self, name: str, description: str) -> None:
-        self.name = name
-        self.description = description
-
-    async def run(self, harness: VoiceCallClient, state: ConversationState) -> None:
-        """Run the test scenario."""
-        raise NotImplementedError
 
 
 class ProxyHumanConversator:
@@ -207,6 +209,7 @@ class ProxyHumanConversator:
         return {
             "function_calls": state.function_calls,
             "transcription": state.history,
+            "conversation": state.get_conversation_for_evaluation()
         }
 
     async def _run_conversation(self, scenario_name: str, scenario_instructions: str) -> Dict[str, object]:
@@ -347,7 +350,11 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
         target=ProxyHumanConversator(max_turns=8, output_dir=output_dir),
         evaluators={
             "function_calls": FunctionCallEvaluator(),
-            "conversation": ConversationEvaluator()
+            "conversation": ConversationEvaluator(),
+            "content_safety": ContentSafetyEvaluator(
+                credential=DefaultAzureCredential(),
+                azure_ai_project=azure_ai_project_endpoint
+            )
         },
         evaluator_config={
             "default": {
@@ -355,9 +362,9 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
                     "scenario_name": "${data.scenario_name}",
                     "instructions": "${data.instructions}",
                     "function_calls": "${target.function_calls}",
-                    "transcription": "${target.transcription}",
                     "expected_function_calls": "${data.expected_function_calls}",
-                    "unexpected_function_calls": "${data.unexpected_function_calls}"
+                    "unexpected_function_calls": "${data.unexpected_function_calls}",
+                    "conversation": "${target.conversation}"
                 }
             },
         },
