@@ -1,6 +1,6 @@
 # Conversation Test Runner
 
-The `conversation_test_runner.py` script is designed to simulate and test conversational scenarios with a voice AI system. It uses Azure OpenAI services for text-to-speech (TTS) and speech-to-text (STT) functionalities.
+This eval package is designed to simulate and test conversational scenarios with a voice AI system. It uses Azure OpenAI services for text-to-speech (TTS) and speech-to-text (STT) functionalities.
 
 ## Pre-requisites
 
@@ -18,7 +18,7 @@ task run
 Then, run the test runner in another terminal window:
 
 ```bash
-task test
+task eval
 ```
 
 > Make sure you're still logged into Azure either via `azd auth login` or `az login` so that the authentication works on the OpenAI endpoints, otherwise you may see an authentication error.
@@ -26,5 +26,5 @@ task test
 ### 5. Check the test_outputs folder for generated audio and the transcript in json
 
 ```bash
-cd api/test_outputs
+cd eval/test_outputs
 ```

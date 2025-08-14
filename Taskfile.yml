@@ -22,7 +22,7 @@ tasks:
       - uv run fastapi dev
   run:
     deps: [run:devtunnel, run:api]
-  test:
-    dir: api
+  eval:
+    dir: eval
     cmds:
-      - uv run python -m evaluation.conversation_test_runner
+      - uv run main.py

@@ -13,11 +13,11 @@ from azure.ai.evaluation import evaluate, ContentSafetyEvaluator, IndirectAttack
 from dotenv_azd import load_azd_env
 from openai import AsyncAzureOpenAI
 
-from evaluation.utils import (ask_proxy_human, speech_to_text_pcm,
-                              text_to_speech_pcm,
-                              convert_json_to_jsonl)
-from evaluation.voice_call_client import VoiceCallClient
-from evaluation.metrics import FunctionCallEvaluator, ConversationEvaluator
+from metrics import FunctionCallEvaluator, ConversationEvaluator
+from utils import (ask_proxy_human,
+                   speech_to_text_pcm, text_to_speech_pcm,
+                   convert_json_to_jsonl)
+from voice_call_client import VoiceCallClient
 
 
 # -----------------------------------------------------------------------------

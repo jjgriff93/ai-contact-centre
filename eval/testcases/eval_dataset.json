@@ -5,27 +5,31 @@
         "expected_function_calls": [
             {
                 "plugin": "delivery",
+                "function_name": "verify_identity_for_order"
+            },
+            {
+                "plugin": "delivery",
                 "function_name": "get_available_slots_for_delivery",
                 "arguments": {
-                    "date": "2025-08-18"
+                    "start_date": "2025-08-18"
                 }
             },
             {
                 "plugin": "delivery",
                 "function_name": "get_available_slots_for_delivery",
                 "arguments": {
-                    "date": "2025-08-20"
+                    "start_date": "2025-08-20"
                 }
             },
             {
                 "plugin": "delivery",
-                "function_name": "book_delivery_slot"
+                "function_name": "schedule_delivery"
             }
         ],
         "unexpected_function_calls": [
             {
                 "plugin": "call",
-                "function_name": "handoff"
+                "function_name": "transfer_to_human"
             }
         ]
     }
