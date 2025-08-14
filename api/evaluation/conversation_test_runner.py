@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from azure.ai.evaluation import evaluate, ContentSafetyEvaluator
+from azure.ai.evaluation import evaluate, ContentSafetyEvaluator, IndirectAttackEvaluator
 from dotenv_azd import load_azd_env
 from openai import AsyncAzureOpenAI
 
@@ -343,6 +343,7 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
 
     # Run evaluation across all test cases
     evaluation_name = f"conversation-tests-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    azure_evaluator_args = {"credential": DefaultAzureCredential(), "azure_ai_project": azure_ai_project_endpoint}
     # os.environ["PF_WORKER_COUNT"] = "1"  # Max concurrency for eval target run  #TODO: useful?
     result = evaluate(
         evaluation_name=evaluation_name,
@@ -351,10 +352,8 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
         evaluators={
             "function_calls": FunctionCallEvaluator(),
             "conversation": ConversationEvaluator(),
-            "content_safety": ContentSafetyEvaluator(
-                credential=DefaultAzureCredential(),
-                azure_ai_project=azure_ai_project_endpoint
-            )
+            "content_safety": ContentSafetyEvaluator(**azure_evaluator_args),
+            "indirect_attack": IndirectAttackEvaluator(**azure_evaluator_args)
         },
         evaluator_config={
             "default": {
