@@ -6,6 +6,13 @@ This eval package is designed to simulate and test conversational scenarios with
 
 - Deploy the solution as detailed in the main [README](../../README.md) file.
 - Go to your AI Foundry and deploy `gpt-4o-mini-tts` (this is not yet avaiable in `Sweden Central` so manual deployment is required to create a secondary linked region in `eastus2` for this model). Call the deployment `gpt4oMiniTTSDeployment`.
+- Update your local azd env file with the endpoint of your Azure AI Foundry project:
+
+  ```bash
+  azd env set AZURE_AI_PROJECT_ENDPOINT <your-ai-foundry-project-endpoint>
+  ```
+
+  The endpoint should look something like: `https://<yourservice>.services.ai.azure.com/api/projects/<yourproject>`
 
 ### Run the test/conversation code
 

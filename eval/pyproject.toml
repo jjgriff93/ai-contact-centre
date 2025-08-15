@@ -9,4 +9,5 @@ dependencies = [
     "dotenv-azd>=0.3.0",
     "openai>=1.99.9",
     "websockets>=15.0.1",
+    "azure-ai-evaluation>=1.10.0",
 ]
