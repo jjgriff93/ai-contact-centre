@@ -203,7 +203,7 @@ class ProxyHumanConversator:
             Dict[str, object]: conversation results including history and function calls
         """
         # Run the conversation
-        state = asyncio.run(self._run_conversation(scenario_name, instructions))
+        state = asyncio.run(self._run_conversation(scenario_name.replace(' ', '_'), instructions))
 
         # Return outputs for evaluation
         return {
@@ -220,7 +220,7 @@ class ProxyHumanConversator:
         receive_task: Optional[asyncio.Task] = None
 
         try:
-            await harness.connect(f"test-evaluation-{int(time.time())}")
+            await harness.connect(f"test-{scenario_name}")
             receive_task = asyncio.create_task(harness.receive_messages())
 
             # Run the conversation
@@ -276,7 +276,7 @@ class ProxyHumanConversator:
             # Extract function calls from chat history
             state.function_calls = self._get_function_calls_from_chat_history(harness.chat_history)
 
-            # Store results and output transcript summary 
+            # Store results and output transcript summary
             wav_path = self.output_dir / f"{scenario_name}_conversation.wav"
             await harness.save_conversation_audio(str(wav_path))
 
@@ -353,7 +353,7 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
             "function_calls": FunctionCallEvaluator(),
             "conversation": ConversationEvaluator(),
             "content_safety": ContentSafetyEvaluator(**azure_evaluator_args),
-            "indirect_attack": IndirectAttackEvaluator(**azure_evaluator_args)
+            "indirect_attack": IndirectAttackEvaluator(**azure_evaluator_args),
         },
         evaluator_config={
             "default": {
@@ -363,7 +363,7 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
                     "function_calls": "${target.function_calls}",
                     "expected_function_calls": "${data.expected_function_calls}",
                     "unexpected_function_calls": "${data.unexpected_function_calls}",
-                    "conversation": "${target.conversation}"
+                    "conversation": "${target.conversation}",
                 }
             },
         },

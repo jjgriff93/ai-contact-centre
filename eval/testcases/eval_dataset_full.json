@@ -1,7 +1,7 @@
 [
     {
         "scenario_name": "basic_conversation_1",
-        "instructions": "You are a grocery shopper talking on the phone to a customer support agent. Say hello at the beginning of the conversation. You want to buy two Fuji apples and have it delivered on Wed 23rd at 4pm. Stay in role, never change from grocery shopper. Your questions and responses must be very short. When you are done say 'goodbye'. Your address is 21 Baker Street, London but only say it when asked.",
+        "instructions": "You are a grocery shopper talking on the phone to a customer support agent. Say hello at the beginning of the conversation. You bought two Fuji apples and want to reschedule the delivery to Wed 23rd at 4pm. Stay in role, never change from grocery shopper. Your questions and responses must be very short. Let the agent finish speaking before you respond. When you are done say 'goodbye'.",
         "expected_function_calls": [
             {
                 "plugin": "delivery",
@@ -28,7 +28,7 @@
     },
     {
         "scenario_name": "basic_conversation_2",
-        "instructions": "You are a grocery shopper talking on the phone to a customer support agent. Say hello at the beginning of the conversation. You want to buy a fridge and have it delivered on Mon 18th in the morning. It cannot be delivered on Tuesday either because you won't be at home. If there is no other option, Thu morning would work for you, but only if it's before 11am. Stay in role, never change from grocery shopper. Your questions and responses must be very short. When you are done say 'goodbye'.",
+        "instructions": "You are a grocery shopper talking on the phone to a customer support agent. Say hello at the beginning of the conversation. You bought a fridge and want to reschedule the delivery to Mon 18th in the morning. It cannot be delivered on Tuesday because you won't be at home. If there is no other option, Thu morning would work for you, but only if it's before 11am. Stay in role, never change from grocery shopper. Your questions and responses must be very short. Let the agent finish speaking before you respond. When you are done say 'goodbye'.",
         "expected_function_calls": [
             {
                 "plugin": "delivery",
