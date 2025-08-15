@@ -55,7 +55,7 @@ class FunctionCallEvaluator:
             raise ValueError("Error in data: expected and unexpected function calls are not disjoint.")
 
         nmatches_expected = sum(1 for fcall in actual if fcall in expected)
-        nmatches_unexpected = sum(1 for fcall in actual if fcall in unexpected)  #TODO
+        nmatches_unexpected = sum(1 for fcall in actual if fcall in unexpected)
 
         precision = nmatches_expected / len(actual) if actual else 0
         recall = nmatches_expected / len(expected) if expected else 0
