@@ -15,7 +15,7 @@ class DeliveryPlugin:
     """Delivery plugin for managing tasks related to scheduling or rescheduling order deliveries."""
     def __init__(self):
         self.current_verified_order_number = None
-    
+
     @kernel_function
     def verify_identity_for_order(
         self,
@@ -72,7 +72,7 @@ class DeliveryPlugin:
         slots = [DeliverySlotModel(id=str(idx + 1), start_time=t) for idx, t in enumerate(chosen_times)]
 
         return slots
-    
+
     @kernel_function
     def schedule_delivery(
         self,

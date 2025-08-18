@@ -58,13 +58,13 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
         for item in msg.items:
             if isinstance(item, FunctionCallContent):
                 function_calls.append({
-                    "name": item.function_name,
+                    "function_name": item.function_name,
                     "plugin": item.plugin_name,
                     "arguments": json.loads(item.arguments)
                 })
             elif isinstance(item, FunctionResultContent):
                 function_calls.append({
-                    "name": item.function_name,
+                    "function_name": item.function_name,
                     "plugin": item.plugin_name,
                     "arguments_sent": item.metadata["arguments"],
                     "arguments_used": item.metadata["used_arguments"],
