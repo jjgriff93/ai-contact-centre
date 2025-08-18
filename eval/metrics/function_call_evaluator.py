@@ -23,8 +23,10 @@ class FunctionCall:
         if not isinstance(value, FunctionCall):
             return NotImplemented
 
+        # If arguments are not set for any of the 2 we just compare plugin and function name
+        # For example: we want to check that schedule_delivery() has been called but we don't care which slot was chosen
         is_equal = (self.plugin == value.plugin) and (self.name == value.name)
-        if self.arguments is not None or value.arguments is not None:
+        if self.arguments is not None and value.arguments is not None:
             is_equal = is_equal and (self.arguments == value.arguments)
 
         return is_equal
