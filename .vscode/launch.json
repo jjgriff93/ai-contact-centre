@@ -11,6 +11,17 @@
       "module": "uvicorn",
       "args": ["api.app.main:app", "--reload"],
       "jinja": true
+    },
+    {
+      "name": "Python Debugger: FastAPI (Logging: DEBUG)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["api.app.main:app", "--reload"],
+      "jinja": true,
+      "env": {
+        "LOG_LEVEL": "DEBUG"
+      }
     }
   ]
 }

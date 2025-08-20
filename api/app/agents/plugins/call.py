@@ -29,10 +29,10 @@ class CallPlugin:
         logger.info("@ hangup has been called")
 
         if not self._call_connection_id:
-            raise ValueError("No call connection ID available to hang up the call.")
-
-        # Hang up the call for everyone in the call
-        await self._acs_client.get_call_connection(self._call_connection_id).hang_up(
-            is_for_everyone=True
-        )
-        logger.info("Call has been hung up.")
+            logger.warning("No call connection ID available to hang up the call.")
+        else:
+            # Hang up the call for everyone in the call
+            await self._acs_client.get_call_connection(self._call_connection_id).hang_up(
+                is_for_everyone=True
+            )
+            logger.info("Call has been hung up.")

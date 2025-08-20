@@ -13,36 +13,16 @@ logger.setLevel(logging.INFO)
 
 class DeliveryPlugin:
     """Delivery plugin for managing tasks related to scheduling or rescheduling order deliveries."""
-    def __init__(self):
-        self.current_verified_order_number = None
-    
-    @kernel_function
-    def verify_identity_for_order(
-        self,
-        order_number: Annotated[int, "The ID of the order to verify (obtained from the customer)."],
-        delivery_postcode: Annotated[str, "The delivery postcode for the order."],
-        order_phone_number: Annotated[int | None, "The phone number associated with the order. Only required if initial verification fails due to phone number customer is calling from not matching order."] = None
-    ) -> str:
-        """Verify the customer's identity against the details on their order. This MUST be performed before any delivery actions can be performed."""
-        logger.info(f"@ verify_identity called for order {order_number}, postcode {delivery_postcode}, phone {order_phone_number}")
-        # TODO: retrieve order by order number
-        # TODO: verify delivery postcode matches order postcode
-        # TODO: get phone number from current ACS context and verify it matches order phone number
-        self.current_verified_order_number = order_number
-        return f"Customer has been verified against order {order_number}. Delivery actions against this order can now be performed."
 
     @kernel_function
     def get_available_slots_for_delivery(
         self,
+        order_number: Annotated[str, "The order number to get delivery slots for."],
         start_date: Annotated[str, "The start date for the delivery slots, defaulting to today. Use for pagination."] = date.today().isoformat(),
         range_in_days: Annotated[int, "The number of days to look ahead for delivery slots."] = 7
     ) -> list[DeliverySlotModel]:
-        """Get the slots that are available for delivery for the current verified order."""
-        logger.info(f"@ get_available_slots_for_delivery called for {start_date} with range {range_in_days} days")
-
-        if not self.current_verified_order_number:
-            logger.warning("Attempted to get available slots without verifying identity.")
-            raise ValueError("Please verify customer's identity before getting available delivery slots.")
+        """Get the slots that are available for delivery."""
+        logger.info(f"@ get_available_slots_for_delivery called for order {order_number} from {start_date} with range {range_in_days} days")
 
         # Simulate getting available slots for the order
         # Get between 0 and 10 random slots in the provided date range
@@ -80,9 +60,5 @@ class DeliveryPlugin:
     ) -> str:
         """Schedule a delivery for the customer's order."""
         logger.info(f"@ schedule_delivery called for id {slot_id}")
-
-        if not self.current_verified_order_number:
-            logger.warning("Attempted to schedule delivery without verifying identity.")
-            raise ValueError("Please verify customer's identity before scheduling a delivery.")
 
         return f"Delivery has been scheduled for slot {slot_id}."
