@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import yaml
 from azure.identity.aio import (DefaultAzureCredential,
@@ -10,7 +11,10 @@ from fastapi import WebSocket
 from numpy import ndarray
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai import ListenEvents, SendEvents
+from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
+                                                   ListenEvents, SendEvents)
+from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_realtime_execution_settings import \
+    AzureRealtimeExecutionSettings
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
 from semantic_kernel.contents import (ChatHistory, FunctionCallContent,
@@ -21,55 +25,52 @@ from semantic_kernel.prompt_template import (KernelPromptTemplate,
 
 from ..config import settings
 from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
-                               AzureVoiceLiveInputAudioEchoCancellation,
-                               AzureVoiceLiveInputAudioNoiseReduction,
-                               AzureVoiceLiveTurnDetection,
-                               AzureVoiceLiveVoiceConfig,
                                AzureVoiceLiveWebsocket)
 
 logger = logging.getLogger(__name__)
 
 
-def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
-    """Convert chat history to JSON format.
-
-    Args:
-        chat_history: the ChatHistory object to export
-        from_index: starting index to export from (default: 0, export all messages)
-
-    Returns:
-        A JSON string representation of the chat history
-    """
-    # Filter messages from the given index
+def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> list[dict[str, Any]]:
+    """Convert chat history to a list of dicts suitable for JSON serialization."""
     messages_raw = chat_history.messages[from_index:]
 
-    # Convert messages from SK class to dict
-    messages_formatted = []
+    messages_formatted: list[dict[str, Any]] = []
     for msg in messages_raw:
-        message_data = {
-            "role": msg.role.value
-        }
-
+        message_data: dict[str, Any] = {"role": msg.role.value}
         if msg.content:
             message_data["content"] = str(msg.content)
 
-        # Include function calls if present
-        function_calls = []
+        function_calls: list[dict[str, Any]] = []
         for item in msg.items:
             if isinstance(item, FunctionCallContent):
-                function_calls.append({
-                    "name": item.function_name,
-                    "plugin": item.plugin_name,
-                    "arguments": json.loads(item.arguments)
-                })
+                parsed_args: dict | list | str | None
+                if isinstance(item.arguments, str):
+                    try:
+                        parsed_args = json.loads(item.arguments)
+                    except Exception:
+                        parsed_args = item.arguments
+                elif isinstance(item.arguments, dict):
+                    parsed_args = item.arguments
+                else:
+                    parsed_args = None
+
+                function_calls.append(
+                    {
+                        "name": item.function_name,
+                        "plugin": item.plugin_name,
+                        "arguments": parsed_args,
+                    }
+                )
             elif isinstance(item, FunctionResultContent):
-                function_calls.append({
-                    "name": item.function_name,
-                    "plugin": item.plugin_name,
-                    "arguments_sent": item.metadata["arguments"],
-                    "arguments_used": item.metadata["used_arguments"],
-                    "result": item.result
-                })
+                function_calls.append(
+                    {
+                        "name": item.function_name,
+                        "plugin": item.plugin_name,
+                        "arguments_sent": item.metadata["arguments"],
+                        "arguments_used": item.metadata["used_arguments"],
+                        "result": item.result,
+                    }
+                )
 
         if function_calls:
             message_data["function_calls"] = function_calls
@@ -79,17 +80,17 @@ def export_chat_history(chat_history: ChatHistory, from_index: int = 0) -> str:
     return messages_formatted
 
 
-async def get_agent(template_name: str, plugins: list[object], chat_history: ChatHistory, **kwargs) -> AzureVoiceLiveWebsocket:
+async def get_agent(template_name: str, plugins: list[object], chat_history: ChatHistory, **kwargs) -> AzureRealtimeWebsocket:
     """
     Get a realtime voice agent by rendering a prompt template and adding plugins.
 
     Args:
-        template_name: The name of the prompt template to use for the agent (in the templates directory).
+        template_name: The name of the prompt template to use for the agent (in the prompts directory).
         plugins: A list of plugins to add to the agent.
         chat_history: The chat history object to use for the agent.
         **kwargs: Additional keyword arguments to pass to the prompt template rendering.
     """
-    yaml_path = Path(__file__).parent / "templates" / f"{template_name}.yaml"
+    yaml_path = Path(__file__).parent / "prompts" / f"{template_name}.yaml"
     with open(yaml_path, "r") as file:
         yaml_content = file.read()
         yaml_data = yaml.safe_load(yaml_content)
@@ -101,43 +102,51 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
     rendered_prompt = await prompt_template.render(Kernel(), prompt_arguments)
     logger.debug(f"Rendered prompt: {rendered_prompt}")
 
-    execution_settings = AzureVoiceLiveExecutionSettings(
-        instructions=rendered_prompt,
-        voice=AzureVoiceLiveVoiceConfig(
-            name="en-US-Andrew:DragonHDLatestNeural", # en-US-Alloy:DragonHDLatestNeural, en-GB-OllieMultilingualNeural
-            type="azure-standard",
-        ),
-        turn_detection=AzureVoiceLiveTurnDetection(
-            type="server_vad",
-            create_response=True,
-            silence_duration_ms=800,
-            threshold=0.8,
-        ),
-        input_audio_noise_reduction=AzureVoiceLiveInputAudioNoiseReduction(
-            type="azure_deep_noise_suppression"
-        ),
-        input_audio_echo_cancellation=AzureVoiceLiveInputAudioEchoCancellation(
-            type="server_echo_cancellation"
-        ),
-        # TODO: adding transcription currently causes stream to disconnect. Investigate
-        # input_audio_transcription=AzureVoiceLiveInputAudioTranscription(
-        #     model="azure-fast-transcription"
-        # ),
-        function_choice_behavior=FunctionChoiceBehavior.Auto(),
-    )
+    # Load voice live execution settings from a single YAML file (env override supported)
+    config_path = str(Path(__file__).parent / "settings" / settings.REALTIME_CONFIG_PATH)
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    # Determine service mode from config
+    service = cfg.pop("service", None).lower()
+    deployment_name = cfg.pop("deployment_name", None) or "gpt-4o-realtime-preview"
+    api_version = cfg.pop("api_version", None) or "2025-05-01-preview"
+
+    # Prepare execution settings payload
+    exec_payload = dict(cfg)
+
+    # Merge rendered instructions, taking precedence over YAML if provided via template
+    # YAML may include an instructions placeholder; always override with rendered prompt when present
+    exec_payload["instructions"] = rendered_prompt
+
+    # Construct pydantic settings allowing nested dicts to be parsed into models
+    if service == "azure_realtime":
+        execution_settings = AzureRealtimeExecutionSettings(
+            function_choice_behavior=FunctionChoiceBehavior.Auto(),
+            **exec_payload,
+        )
+        client_class = AzureRealtimeWebsocket
+    elif service == "azure_voice_live":
+        execution_settings = AzureVoiceLiveExecutionSettings(
+            function_choice_behavior=FunctionChoiceBehavior.Auto(),
+            **exec_payload,
+        )
+        client_class = AzureVoiceLiveWebsocket
+    else:
+        raise ValueError(f"Unknown service: {service}")
 
     chat_history.add_system_message(execution_settings.instructions)
 
-    return AzureVoiceLiveWebsocket(
+    return client_class(
         endpoint=settings.AZURE_AI_SERVICES_ENDPOINT,
-        deployment_name="gpt-4o-realtime-preview",
+        deployment_name=deployment_name,
         ad_token_provider=get_bearer_token_provider(
             DefaultAzureCredential(),
             "https://cognitiveservices.azure.com/.default",
         ),
-        api_version="2025-05-01-preview",
+        api_version=api_version,
         plugins=plugins,
-        settings=execution_settings
+        settings=execution_settings,
     )
 
 async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):

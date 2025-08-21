@@ -1,0 +1,50 @@
+# Azure Voice Live execution settings
+# Azure Voice Live execution settings
+# You can override this file by setting env var VOICE_LIVE_CONFIG_PATH to a different YAML path
+
+service: azure_voice_live
+
+instructions: |
+  You are a helpful voice assistant.
+
+voice:
+  name: en-US-Andrew:DragonHDLatestNeural
+  type: azure-standard
+  # temperature: 0.8
+  # rate: "1.0"
+  # endpoint_id: ""
+  # custom_lexicon_url: ""
+
+turn_detection:
+  type: server_vad
+  create_response: true
+  silence_duration_ms: 800
+  threshold: 0.8
+  # eagerness: auto
+  # interrupt_response: false
+  # prefix_padding_ms: 0
+  # remove_filler_words: false
+  # end_of_utterance_detection:
+  #   model: semantic_detection_v1
+  #   threshold: 0.5
+  #   timeout: 1000
+
+input_audio_noise_reduction:
+  type: azure_deep_noise_suppression
+
+input_audio_echo_cancellation:
+  type: server_echo_cancellation
+
+# input_audio_transcription:
+#   model: azure-fast-transcription
+#   phrase_list: []
+
+# Optional general settings
+# temperature: 0.8
+# max_response_output_tokens: inf
+# input_audio_sampling_rate: 24000
+# input_audio_format: pcm16
+# output_audio_format: pcm16
+# modalities: [audio, text]
+
+# Function/tool choice behavior is fixed to Auto in code.

@@ -1,22 +1,15 @@
 import logging
 import sys
-from typing import (
-    Annotated,
-    Any,
-    Dict,
-    List,
-    Literal,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
-)
+from typing import (Annotated, Any, Dict, List, Literal, Mapping, Optional,
+                    Sequence, Union)
 
 from openai.types.beta.realtime.session import Tool, Tracing
-from openai.types.beta.realtime.session_update_event_param import SessionClientSecret
+from openai.types.beta.realtime.session_update_event_param import \
+    SessionClientSecret
 from pydantic import Field
 from semantic_kernel.connectors.ai import PromptExecutionSettings
-from semantic_kernel.connectors.ai.open_ai import AzureRealtimeWebsocket, SendEvents
+from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
+                                                   SendEvents)
 from semantic_kernel.contents import RealtimeEvents
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
@@ -27,7 +20,7 @@ else:
 
 
 logger: logging.Logger = logging.getLogger(
-    "semantic_kernel.connectors.ai.open_ai.realtime"
+    "semantic_kernel.connectors.ai.azure.voice_live"
 )
 
 

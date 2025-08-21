@@ -18,5 +18,6 @@ class Settings(BaseSettings):
     AZURE_AI_SERVICES_ENDPOINT: str = Field(..., description='Azure AI (Cognitive) Services endpoint')
     AZURE_ACS_CALLBACK_HOST_URI: Optional[str] = Field(None, description='Callback host URI for webhooks. If not specified will use the requests host URI.')
     MCP_ORDERS_URL: str = Field(..., description='URL for the Orders MCP server')
+    REALTIME_CONFIG_PATH: str = Field("voice_live.yaml", description='Path to YAML file within agent/settings folder that configures which service to use and its execution settings.')
 
 settings = Settings() # type: ignore
