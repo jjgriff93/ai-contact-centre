@@ -1,15 +1,16 @@
 # Azure OpenAI Realtime (WebRTC/WebSocket) execution settings
-# Set VOICE_LIVE_CONFIG_PATH to point to this file to run in Azure Realtime mode
 
 service: azure_realtime
+api_version: 2024-10-01-preview
+deployment_name: gpt-4o-realtime-preview
 
 # Instructions are provided by the prompt template and will override this field
 # instructions: |
 #   You are a helpful real-time assistant.
 
 # For OpenAI/Azure Realtime, voice is a simple string
-# Example options: "verse", "alloy", "aria" (Azure voice names may apply)
-voice: alloy
+# Example options: alloy, ash, ballad, coral, echo, sage, shimmer, verse
+voice: ballad
 
 turn_detection:
   type: server_vad
@@ -31,6 +32,4 @@ turn_detection:
 # input_audio_noise_reduction:
 #   type: near_field
 
-# You can override model deployment and api version per profile
-# deployment_name: gpt-4o-realtime-preview
-# api_version: 2025-05-01-preview
+# Function/tool choice behavior is fixed to Auto in code.

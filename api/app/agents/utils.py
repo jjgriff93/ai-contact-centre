@@ -110,7 +110,7 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
     # Determine service mode from config
     service = cfg.pop("service", None).lower()
     deployment_name = cfg.pop("deployment_name", None) or "gpt-4o-realtime-preview"
-    api_version = cfg.pop("api_version", None) or "2025-05-01-preview"
+    api_version = cfg.pop("api_version", None)
 
     # Prepare execution settings payload
     exec_payload = dict(cfg)

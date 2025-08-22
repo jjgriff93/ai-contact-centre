@@ -1,8 +1,7 @@
 # Azure Voice Live execution settings
-# Azure Voice Live execution settings
-# You can override this file by setting env var VOICE_LIVE_CONFIG_PATH to a different YAML path
 
 service: azure_voice_live
+api_version: 2025-05-01-preview
 
 instructions: |
   You are a helpful voice assistant.
