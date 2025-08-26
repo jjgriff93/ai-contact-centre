@@ -352,8 +352,8 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
         evaluators={
             "function_calls": FunctionCallEvaluator(),
             "conversation": ConversationEvaluator(),
-            # "content_safety": ContentSafetyEvaluator(**azure_evaluator_args),
-            # "indirect_attack": IndirectAttackEvaluator(**azure_evaluator_args)
+            "content_safety": ContentSafetyEvaluator(**azure_evaluator_args),
+            "indirect_attack": IndirectAttackEvaluator(**azure_evaluator_args)
         },
         evaluator_config={
             "default": {
@@ -364,6 +364,7 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
                     "expected_function_calls": "${data.expected_function_calls}",
                     "unexpected_function_calls": "${data.unexpected_function_calls}",
                     "conversation": "${target.conversation}",
+                    "transcription": "${target.transcription}",
                 }
             },
         },
