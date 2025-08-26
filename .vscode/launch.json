@@ -21,7 +21,8 @@
       "jinja": true,
       "env": {
         "LOG_LEVEL": "DEBUG"
-      }
+      },
+      "justMyCode": false
     }
   ]
 }

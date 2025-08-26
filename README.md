@@ -79,3 +79,19 @@ Like with the local API, set up an Event Grid subscription for the remote API to
 > Disable the local API event grid subscription to avoid conflicts.
 
 Then phoning the ACS number should connect you to the AI agent running in the Azure Container App.
+
+## Configuration
+
+### API Environment Variables
+
+The following environment variables can be used to configure the application:
+
+- `MCP_ORDERS_URL`: The URL for the MCP Orders API.
+
+- `REALTIME_CONFIG_PATH`: The path to the realtime service configuration file to use (within `api/app/agents/settings`).
+
+  For example, to change from using the default `voice_live.yaml` file to `4o_realtime.yaml` in local development, you would run:
+
+  ```bash
+  azd env set REALTIME_CONFIG_PATH 4o_realtime.yaml
+  ```

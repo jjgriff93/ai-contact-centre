@@ -10,7 +10,8 @@ from pydantic import Field
 from semantic_kernel.connectors.ai import PromptExecutionSettings
 from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
                                                    SendEvents)
-from semantic_kernel.contents import RealtimeEvents
+from semantic_kernel.contents import (RealtimeEvents,
+                                      RealtimeFunctionResultEvent)
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
 if sys.version_info >= (3, 12):
@@ -201,31 +202,46 @@ class AzureVoiceLiveWebsocket(AzureRealtimeWebsocket):
     @override
     async def send(self, event: RealtimeEvents, **kwargs: Any) -> None:
         """Send an event to the Websocket client. We need to override to handle the modified session update event"""
-        if event.service_type == SendEvents.SESSION_UPDATE:
-            data = event.service_event
-            if not data:
-                logger.error("Event data is empty")
-                return
-            settings = data.get("settings", None)
-            if not settings:
-                logger.error("Event data does not contain 'settings'")
-                return
-            try:
-                settings = self.get_prompt_execution_settings_from_settings(settings)
-            except Exception as e:
-                logger.error(
-                    f"Failed to properly create settings from passed settings: {settings}, error: {e}"
-                )
-                return
-            assert isinstance(settings, self.get_prompt_execution_settings_class())  # nosec
-            if not settings.ai_model_id:  # type: ignore
-                settings.ai_model_id = self.ai_model_id  # type: ignore
-            # Pass the event as a dictionary instead of Pydantic model to avoid OpenAI SDK validation error in send()
-            await self._send(
-                {
-                    "type": SendEvents.SESSION_UPDATE.value,
-                    "session": settings.prepare_settings_dict(),  # type: ignore
-                }
-            )
-        else:
-            await super().send(event, **kwargs)
+        match event:
+            case RealtimeFunctionResultEvent():
+                # If the function response is not a string it will cause realtime service to hang indefinitely https://github.com/microsoft/semantic-kernel/issues/13003
+                # Convert any non-string responses to a JSON string for workaround
+                result = event.function_result.result
+                if not isinstance(result, str):
+                    import json
+
+                    event.function_result.result = json.dumps(result)
+                    logger.warning("Non-string function result converted to JSON string")
+
+                await super().send(event, **kwargs)
+
+            case _:
+                # If a SESSION_UPDATE we need to handle differently for Voice Live due to OpenAI SDK expecting different exec settings
+                if event.service_type == SendEvents.SESSION_UPDATE:
+                    data = event.service_event
+                    if not data:
+                        logger.error("Event data is empty")
+                        return
+                    settings = data.get("settings", None)
+                    if not settings:
+                        logger.error("Event data does not contain 'settings'")
+                        return
+                    try:
+                        settings = self.get_prompt_execution_settings_from_settings(settings)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to properly create settings from passed settings: {settings}, error: {e}"
+                        )
+                        return
+                    assert isinstance(settings, self.get_prompt_execution_settings_class())  # nosec
+                    if not settings.ai_model_id:  # type: ignore
+                        settings.ai_model_id = self.ai_model_id  # type: ignore
+                    # Pass the event as a dictionary instead of Pydantic model to avoid OpenAI SDK validation error in send()
+                    await self._send(
+                        {
+                            "type": SendEvents.SESSION_UPDATE.value,
+                            "session": settings.prepare_settings_dict(),  # type: ignore
+                        }
+                    )
+                else:
+                    await super().send(event, **kwargs)

@@ -170,19 +170,30 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
             )
         )
 
+    def _get(obj: Any, path: str, default: Any | None = None) -> Any | None:
+        """Safely get a nested attribute by dot path (returns default on any miss)."""
+        cur = obj
+        for part in path.split("."):
+            if cur is None:
+                return default
+            cur = getattr(cur, part, None)
+        return cur if cur is not None else default
+
     idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
     async for event in client.receive(audio_output_callback=from_realtime_to_acs):
+        se = getattr(event, "service_event", None)
         match event.service_type:
             case ListenEvents.SESSION_CREATED:
                 logger.info("Session Created Message")
-                logger.debug(f"  Session Id: {event.service_event.session.id}")
+                logger.debug(f"  Session Id: {_get(se, "session.id") or '<unknown>'}")
             case ListenEvents.ERROR:
-                logger.error(f"  Error: {event.service_event.error}")
+                logger.error(f"  Error: {_get(se, "error") or '<unknown>'}")
             case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
                 logger.info("Input Audio Buffer Cleared Message")
             case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+                audio_start_ms = _get(se, "audio_start_ms")
                 logger.debug(
-                    f"Voice activity detection started at {event.service_event.audio_start_ms} [ms]"
+                    f"Voice activity detection started at {audio_start_ms if audio_start_ms is not None else '<unknown>'} [ms]"
                 )
                 await websocket.send_text(
                     json.dumps(
@@ -190,16 +201,22 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                     )
                 )
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
-                logger.info(f" User:-- {event.service_event.transcript}")
+                logger.info(f" User:-- {_get(se, "transcript") or ''}")
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                logger.error(f"  Error: {event.service_event.error}")
+                logger.error(f"  Error: {_get(se, "error") or '<unknown>'}")
             case ListenEvents.RESPONSE_DONE:
                 logger.info("Response Done Message")
-                logger.debug(f"  Response Id: {event.service_event.response.id}")
-                if event.service_event.response.status_details:
-                    logger.debug(
-                        f"  Status Details: {event.service_event.response.status_details.model_dump_json()}"
-                    )
+                response = _get(se, "response")
+                response_id = _get(response, "id")
+                logger.debug(f"  Response Id: {response_id or '<unknown>'}")
+                status_details = _get(response, "status_details")
+                if status_details:
+                    try:
+                        logger.debug(
+                            f"  Status Details: {status_details.model_dump_json()}"
+                        )
+                    except Exception:
+                        logger.debug("  Status Details present but could not be serialized")
                 # Send chat history (including function calls) to client
                 await websocket.send_text(
                     json.dumps(
@@ -211,13 +228,13 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                 )
                 idx_first_msg_to_send = len(chat_history.messages)
             case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
-                logger.info(f" AI:-- {event.service_event.transcript}")
+                transcript = _get(se, "transcript")
+                logger.info(f" AI:-- {transcript or ''}")
                 # Add assistant message to chat history
-                chat_history.add_assistant_message(event.service_event.transcript)
-            # case ListenEvents.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
-                # Add function call to chat history
-                # Disabling for now - redundant with function result?
-                # chat_history.add_tool_message([event.function_call])
+                if transcript:
+                    chat_history.add_assistant_message(transcript)
             case SendEvents.CONVERSATION_ITEM_CREATE:
                 # Add function call result to chat history
-                chat_history.add_tool_message([event.function_result])
+                function_result = getattr(event, "function_result", None)
+                if function_result is not None:
+                    chat_history.add_tool_message([function_result])
