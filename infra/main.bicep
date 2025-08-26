@@ -30,7 +30,7 @@ param apiExists bool
 param principalId string
 
 @description('Enable automatic phone number purchase during deployment')
-param phoneNumberAutoPurchase bool = false
+param phoneNumberAutoPurchase bool = true
 
 @description('Country code for phone number auto-purchase (ISO 3166-1 alpha-2)')
 @allowed(['US', 'CA', 'GB', 'AU', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'NO', 'DK', 'FI', 'IE', 'CH', 'AT', 'BE', 'PT'])

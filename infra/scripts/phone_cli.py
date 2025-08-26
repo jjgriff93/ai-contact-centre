@@ -48,8 +48,8 @@ def get_acs_endpoint():
             endpoint = f"https://{endpoint}"
         return endpoint
     
-    # Last resort fallback
-    return "https://acs-3iihfyj43p7c4.communication.azure.com"
+    # No fallback - require proper configuration
+    raise ValueError("ACS endpoint not found. Please set AZURE_ACS_ENDPOINT or ACS_ENDPOINT environment variable.")
 
 def get_acs_resource_name():
     """Extract ACS resource name from endpoint"""
@@ -90,23 +90,22 @@ def validate_phone_number(phone_number: str) -> bool:
 
 
 def validate_country_code(country: str) -> bool:
-    """Validate country code against supported countries"""
-    try:
-        from phone_manager import CountryCode
-        return country.upper() in [code.value for code in CountryCode]
-    except Exception:
-        # Fallback list of common countries
-        supported = ['US', 'CA', 'GB', 'AU', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'NO', 'DK', 'FI', 'IE', 'CH', 'AT', 'BE', 'PT']
-        return country.upper() in supported
+    """
+    Basic country code validation - just check format.
+    Azure API will validate actual support dynamically.
+    """
+    if not country or len(country) != 2:
+        return False
+    return country.isalpha()
 
 
 def list_numbers():
     """List all purchased phone numbers"""
     try:
-        from phone_manager import list_phone_numbers_sync
+        from phone_manager import list_phone_numbers
         
         print(f"📱 Listing phone numbers for {ACS_RESOURCE_NAME}...")
-        numbers = list_phone_numbers_sync(ACS_ENDPOINT)
+        numbers = list_phone_numbers(ACS_ENDPOINT)
         
         if not numbers:
             print("No phone numbers currently owned")
@@ -130,8 +129,8 @@ def search_numbers(country="US", toll_free=True):
     try:
         # Validate country code
         if not validate_country_code(country):
-            print(f"❌ Unsupported country code: {country}")
-            print("Supported countries: US, CA, GB, AU, FR, DE, IT, ES, NL, SE, NO, DK, FI, IE, CH, AT, BE, PT")
+            print(f"❌ Invalid country code format: {country}")
+            print("Country code should be a 2-letter code (e.g., US, GB, FR)")
             return []
         
         from phone_manager import SimplePhoneNumberManager, PhoneNumberPurchaseRequest, CountryCode
@@ -140,7 +139,7 @@ def search_numbers(country="US", toll_free=True):
         
         manager = SimplePhoneNumberManager(ACS_ENDPOINT)
         request = PhoneNumberPurchaseRequest(
-            country_code=CountryCode(country),
+            country_code=country,
             toll_free=toll_free,
             quantity=1,
             calling_enabled=True,
@@ -173,8 +172,8 @@ def purchase_number(country, toll_free, specific_number=None, auto_confirm=False
     try:
         # Validate country code
         if not validate_country_code(country):
-            print(f"❌ Unsupported country code: {country}")
-            print("Supported countries: US, CA, GB, AU, FR, DE, IT, ES, NL, SE, NO, DK, FI, IE, CH, AT, BE, PT")
+            print(f"❌ Invalid country code format: {country}")
+            print("Country code should be a 2-letter code (e.g., US, GB, FR)")
             return
         
         # Validate specific phone number if provided
@@ -183,7 +182,7 @@ def purchase_number(country, toll_free, specific_number=None, auto_confirm=False
             print("Phone number should start with + and contain 7-15 digits")
             return
         
-        from phone_manager import purchase_random_phone_number_sync, CountryCode, SimplePhoneNumberManager, PhoneNumberPurchaseRequest
+        from phone_manager import purchase_random_phone_number, CountryCode, SimplePhoneNumberManager, PhoneNumberPurchaseRequest
         
         if specific_number:
             print(f"💰 Purchasing specific number: {specific_number}")
@@ -204,7 +203,7 @@ def purchase_number(country, toll_free, specific_number=None, auto_confirm=False
             # Purchase specific number by searching for it first
             manager = SimplePhoneNumberManager(ACS_ENDPOINT)
             request = PhoneNumberPurchaseRequest(
-                country_code=CountryCode(country),
+                country_code=country,
                 toll_free=toll_free,
                 calling_enabled=True,
                 sms_enabled=False
@@ -240,9 +239,9 @@ def purchase_number(country, toll_free, specific_number=None, auto_confirm=False
         
         else:
             # Random purchase (existing logic)
-            result = purchase_random_phone_number_sync(
+            result = purchase_random_phone_number(
                 endpoint=ACS_ENDPOINT,
-                country_code=CountryCode(country),
+                country_code=country,
                 toll_free=toll_free,
                 calling_enabled=True,
                 sms_enabled=False  # Disable SMS for better compatibility
@@ -301,17 +300,17 @@ def ensure_number(country, toll_free, auto_confirm=False):
     try:
         # Validate country code
         if not validate_country_code(country):
-            print(f"❌ Unsupported country code: {country}")
-            print("Supported countries: US, CA, GB, AU, FR, DE, IT, ES, NL, SE, NO, DK, FI, IE, CH, AT, BE, PT")
+            print(f"❌ Invalid country code format: {country}")
+            print("Country code should be a 2-letter code (e.g., US, GB, FR)")
             return
         
-        from phone_manager import list_phone_numbers_sync, SimplePhoneNumberManager
+        from phone_manager import list_phone_numbers, SimplePhoneNumberManager
         
         number_type_str = 'toll-free' if toll_free else 'geographic'
         print(f"🔄 Ensuring {country} {number_type_str} phone number...")
         
         # Get current phone numbers
-        numbers = list_phone_numbers_sync(ACS_ENDPOINT)
+        numbers = list_phone_numbers(ACS_ENDPOINT)
         
         # Find numbers that match the desired configuration
         matching_numbers = []

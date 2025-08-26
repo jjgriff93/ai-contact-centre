@@ -9,12 +9,9 @@ Production Features:
 - Input validation for phone numbers and country codes
 - Structured logging for monitoring and debugging
 - Type hints for better code maintainability
-- Async and sync API support
 """
 
-import asyncio
 import logging
-import random
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -36,9 +33,13 @@ logger = logging.getLogger(__name__)
 
 
 class CountryCode(str, Enum):
-    """Supported country codes for phone number purchasing"""
+    """
+    Common country codes for phone number purchasing.
+    Note: This is not exhaustive. Azure supports additional countries.
+    The Azure API will validate country support dynamically.
+    """
     US = "US"
-    CA = "CA"
+    CA = "CA" 
     GB = "GB"
     AU = "AU"
     FR = "FR"
@@ -55,6 +56,22 @@ class CountryCode(str, Enum):
     AT = "AT"
     BE = "BE"
     PT = "PT"
+    
+    @classmethod
+    def from_string(cls, country_code: str) -> str:
+        """
+        Convert string to country code, returning the string value.
+        This allows support for countries not explicitly listed in the enum.
+        The Azure API will validate if the country is actually supported.
+        """
+        country_upper = country_code.upper()
+        try:
+            # Try to get the enum member
+            return cls(country_upper).value
+        except ValueError:
+            # Return the string directly for countries not in enum
+            # Azure API will validate actual support
+            return country_upper
 
 
 @dataclass
@@ -72,7 +89,7 @@ class SimplePhoneNumberResult:
 
 class PhoneNumberPurchaseRequest(BaseModel):
     """Request model for phone number purchase"""
-    country_code: CountryCode = Field(default=CountryCode.US, description="Country code for phone number")
+    country_code: str = Field(default="GB", description="Country code for phone number (2-letter ISO code)")
     toll_free: bool = Field(default=True, description="Whether to search for toll-free numbers")
     quantity: int = Field(default=1, ge=1, le=1, description="Number of phone numbers to search for (max 1)")
     area_code: Optional[str] = Field(None, description="Preferred area code (US/CA only)")
@@ -129,11 +146,11 @@ class SimplePhoneNumberManager:
                 sms=PhoneNumberCapabilityType.INBOUND_OUTBOUND if request.sms_enabled else PhoneNumberCapabilityType.NONE
             )
             
-            logger.info(f"Searching for {request.quantity} phone numbers in {request.country_code.value}")
+            logger.info(f"Searching for {request.quantity} phone numbers in {request.country_code}")
             
             # Start search operation
             search_poller = self.client.begin_search_available_phone_numbers(
-                country_code=request.country_code.value,
+                country_code=request.country_code,
                 phone_number_type=phone_number_type,
                 assignment_type=PhoneNumberAssignmentType.APPLICATION,
                 capabilities=capabilities,
@@ -150,7 +167,7 @@ class SimplePhoneNumberManager:
                 for phone_number in search_result.phone_numbers:
                     result = SimplePhoneNumberResult(
                         phone_number=phone_number,
-                        country_code=request.country_code.value,
+                        country_code=request.country_code,
                         phone_number_type=phone_number_type.value if phone_number_type else "unknown",
                         assignment_type=PhoneNumberAssignmentType.APPLICATION.value,
                         capabilities={
@@ -350,20 +367,20 @@ class SimplePhoneNumberManager:
 
 
 # Convenience functions for common operations
-def purchase_random_phone_number_sync(
+def purchase_random_phone_number(
     endpoint: str,
-    country_code: CountryCode = CountryCode.US,
+    country_code: str = "GB",
     toll_free: bool = True,
     calling_enabled: bool = True,
     sms_enabled: bool = True,
     credential: Optional[DefaultAzureCredential] = None
 ) -> Dict[str, Any]:
     """
-    Convenience function to purchase a random phone number (synchronous)
+    Convenience function to purchase a random phone number
     
     Args:
         endpoint: Azure Communication Services endpoint
-        country_code: Country code for the phone number
+        country_code: Country code for the phone number (2-letter ISO code)
         toll_free: Whether to purchase a toll-free number
         calling_enabled: Enable calling capability
         sms_enabled: Enable SMS capability
@@ -382,12 +399,12 @@ def purchase_random_phone_number_sync(
     return manager.purchase_random_phone_number(request)
 
 
-def list_phone_numbers_sync(
+def list_phone_numbers(
     endpoint: str,
     credential: Optional[DefaultAzureCredential] = None
 ) -> List[Dict[str, Any]]:
     """
-    Convenience function to list purchased phone numbers (synchronous)
+    Convenience function to list purchased phone numbers
     
     Args:
         endpoint: Azure Communication Services endpoint
@@ -398,38 +415,3 @@ def list_phone_numbers_sync(
     """
     manager = SimplePhoneNumberManager(endpoint, credential)
     return manager.list_purchased_phone_numbers()
-
-
-# Async wrappers for backward compatibility
-async def purchase_random_phone_number(
-    endpoint: str,
-    country_code: CountryCode = CountryCode.US,
-    toll_free: bool = True,
-    calling_enabled: bool = True,
-    sms_enabled: bool = True,
-    credential: Optional[DefaultAzureCredential] = None
-) -> Dict[str, Any]:
-    """
-    Async wrapper for purchasing a random phone number
-    """
-    def sync_call():
-        return purchase_random_phone_number_sync(
-            endpoint, country_code, toll_free, calling_enabled, sms_enabled, credential
-        )
-    
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sync_call)
-
-
-async def list_phone_numbers(
-    endpoint: str,
-    credential: Optional[DefaultAzureCredential] = None
-) -> List[Dict[str, Any]]:
-    """
-    Async wrapper for listing phone numbers
-    """
-    def sync_call():
-        return list_phone_numbers_sync(endpoint, credential)
-    
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sync_call)

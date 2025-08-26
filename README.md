@@ -62,29 +62,32 @@ If auto-purchase is enabled, a phone number will be automatically purchased afte
 
 #### Using the CLI tool (recommended)
 
-The project includes a simple CLI for managing phone numbers. The CLI automatically uses the same Azure Communication Services resource as your deployed application.
+The project includes a simple CLI for managing phone numbers located in `infra/scripts/`. The CLI automatically uses the same Azure Communication Services resource as your deployed application.
 
 ```bash
-# Navigate to the API directory
+# Navigate to the API directory (for UV environment)
 cd api
 
 # Show available commands
-uv run python app/phone_cli.py --help
+uv run python ../infra/scripts/phone_cli.py --help
 
 # List owned phone numbers
-uv run python app/phone_cli.py list
+uv run python ../infra/scripts/phone_cli.py list
 
 # Search for available numbers (e.g., UK toll-free)
-uv run python app/phone_cli.py search GB toll-free
+uv run python ../infra/scripts/phone_cli.py search GB toll-free
 
 # Purchase a phone number (defaults to US toll-free)
-uv run python app/phone_cli.py purchase
+uv run python ../infra/scripts/phone_cli.py purchase
 
 # Purchase a specific country/type with auto-confirmation
-uv run python app/phone_cli.py purchase GB toll-free --yes
+uv run python ../infra/scripts/phone_cli.py purchase GB toll-free --yes
+
+# Ensure idempotent phone number configuration (used by deployment)
+uv run python ../infra/scripts/phone_cli.py ensure GB toll-free --yes
 
 # Release a phone number
-uv run python app/phone_cli.py release +1234567890
+uv run python ../infra/scripts/phone_cli.py release +1234567890
 ```
 
 #### Using Azure portal
