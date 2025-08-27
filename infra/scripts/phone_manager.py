@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# /// script
+# dependencies = [
+#   "azure-communication-phonenumbers>=1.2.0",
+#   "azure-identity>=1.23.0",
+#   "pydantic>=2.0.0",
+# ]
+# ///
 """
 Azure Communication Services Phone Number Management
 

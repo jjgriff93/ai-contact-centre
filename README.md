@@ -15,28 +15,27 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 
 ### 2. Configure phone number auto-purchase (optional)
 
-You can configure automatic phone number purchasing during deployment by setting azd environment variables:
+Phone numbers are automatically purchased during deployment by default. You can customize the configuration by setting azd environment variables:
 
 ```bash
-# Enable auto-purchase of UK toll-free number
-azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE true
-azd env set AZURE_PHONE_NUMBER_COUNTRY GB
-azd env set AZURE_PHONE_NUMBER_TYPE toll-free
+# Default: Auto-purchase GB toll-free number (no configuration needed)
+azd up
 
-# Or configure for US toll-free
-azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE true
+# Configure for US toll-free instead
 azd env set AZURE_PHONE_NUMBER_COUNTRY US
 azd env set AZURE_PHONE_NUMBER_TYPE toll-free
 
-# Or configure for GB geographic
-azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE true
+# Configure for GB geographic
 azd env set AZURE_PHONE_NUMBER_COUNTRY GB
 azd env set AZURE_PHONE_NUMBER_TYPE geographic
+
+# Disable auto-purchase entirely
+azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE false
 ```
 
 Available configuration options:
 
-- `AZURE_PHONE_NUMBER_AUTO_PURCHASE`: `true` or `false` (default: `false`)
+- `AZURE_PHONE_NUMBER_AUTO_PURCHASE`: `true` or `false` (default: `true`)
 - `AZURE_PHONE_NUMBER_COUNTRY`: Country code - `US`, `CA`, `GB`, `AU`, `FR`, `DE`, `IT`, `ES`, `NL`, `SE`, `NO`, `DK`, `FI`, `IE`, `CH`, `AT`, `BE`, `PT` (default: `GB`)
 - `AZURE_PHONE_NUMBER_TYPE`: `toll-free` or `geographic` (default: `toll-free`)
 
@@ -56,38 +55,43 @@ task setup:infra
 
 This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and deploy the packaged `api` to the Azure Container Apps environment.
 
-If auto-purchase is enabled, a phone number will be automatically purchased after deployment. The deployment is idempotent - it will reuse existing numbers that match your configuration and release any that don't match.
+A phone number will be automatically purchased after deployment (GB toll-free by default). The deployment is idempotent - it will reuse existing numbers that match your configuration and release any that don't match.
 
 ### 4. Manage phone numbers
 
 #### Using the CLI tool (recommended)
 
-The project includes a simple CLI for managing phone numbers located in `infra/scripts/`. The CLI automatically uses the same Azure Communication Services resource as your deployed application.
+The project includes a simple CLI for managing phone numbers located in `infra/scripts/`. The CLI automatically uses the same Azure Communication Services resource as your deployed application and has its dependencies self-contained.
+
+The CLI automatically loads environment variables from your azd project. If you're running from outside the project directory or don't have azd configured, you'll need to set `AZURE_ACS_ENDPOINT` manually:
 
 ```bash
-# Navigate to the API directory (for UV environment)
-cd api
+# If needed, set the ACS endpoint (get this from Azure portal or azd env get-values)
+export AZURE_ACS_ENDPOINT="https://your-acs-resource.communication.azure.com"
+```
 
+**CLI Commands:**
+```bash
 # Show available commands
-uv run python ../infra/scripts/phone_cli.py --help
+uv run infra/scripts/phone_cli.py --help
 
 # List owned phone numbers
-uv run python ../infra/scripts/phone_cli.py list
+uv run infra/scripts/phone_cli.py list
 
 # Search for available numbers (e.g., UK toll-free)
-uv run python ../infra/scripts/phone_cli.py search GB toll-free
+uv run infra/scripts/phone_cli.py search GB toll-free
 
-# Purchase a phone number (defaults to US toll-free)
-uv run python ../infra/scripts/phone_cli.py purchase
+# Purchase a phone number (defaults to GB toll-free)
+uv run infra/scripts/phone_cli.py purchase
 
 # Purchase a specific country/type with auto-confirmation
-uv run python ../infra/scripts/phone_cli.py purchase GB toll-free --yes
+uv run infra/scripts/phone_cli.py purchase US toll-free --yes
 
 # Ensure idempotent phone number configuration (used by deployment)
-uv run python ../infra/scripts/phone_cli.py ensure GB toll-free --yes
+uv run infra/scripts/phone_cli.py ensure GB toll-free --yes
 
 # Release a phone number
-uv run python ../infra/scripts/phone_cli.py release +1234567890
+uv run infra/scripts/phone_cli.py release +1234567890
 ```
 
 #### Using Azure portal

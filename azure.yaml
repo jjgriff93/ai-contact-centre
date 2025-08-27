@@ -8,7 +8,7 @@ hooks:
     run: |
       if [ "${AZURE_PHONE_NUMBER_AUTO_PURCHASE:-false}" = "true" ]; then
         echo "🔢 Ensuring phone number configuration is up to date..."
-        cd api && uv run python ../infra/scripts/phone_cli.py ensure ${AZURE_PHONE_NUMBER_COUNTRY:-GB} ${AZURE_PHONE_NUMBER_TYPE:-toll-free} --yes
+        uv run infra/scripts/phone_cli.py ensure ${AZURE_PHONE_NUMBER_COUNTRY:-GB} ${AZURE_PHONE_NUMBER_TYPE:-toll-free} --yes
       else
         echo "ℹ️ Phone number auto-purchase is disabled. Set AZURE_PHONE_NUMBER_AUTO_PURCHASE=true to enable."
         echo "ℹ️ Configure country with AZURE_PHONE_NUMBER_COUNTRY (default: GB)"
