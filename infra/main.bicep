@@ -91,7 +91,7 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
         }
         sku: {
           name: 'GlobalStandard'
-          capacity: 1
+          capacity: 5
         }
       }
       {
