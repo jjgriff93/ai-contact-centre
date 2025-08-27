@@ -13,6 +13,15 @@
       },
       "principalId": {
         "value": "${AZURE_PRINCIPAL_ID}"
+      },
+      "phoneNumberAutoPurchase": {
+        "value": "${AZURE_PHONE_NUMBER_AUTO_PURCHASE}"
+      },
+      "phoneNumberCountry": {
+        "value": "${AZURE_PHONE_NUMBER_COUNTRY}"
+      },
+      "phoneNumberType": {
+        "value": "${AZURE_PHONE_NUMBER_TYPE}"
       }
     }
 }

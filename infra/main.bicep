@@ -29,6 +29,17 @@ param apiExists bool
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Enable automatic phone number purchase during deployment')
+param phoneNumberAutoPurchase bool = true
+
+@description('Country code for phone number auto-purchase (ISO 3166-1 alpha-2)')
+@allowed(['US', 'CA', 'GB', 'AU', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'NO', 'DK', 'FI', 'IE', 'CH', 'AT', 'BE', 'PT'])
+param phoneNumberCountry string = 'GB'
+
+@description('Phone number type for auto-purchase')
+@allowed(['toll-free', 'geographic'])
+param phoneNumberType string = 'toll-free'
+
 @description('Tags that will be applied to all resources')
 param tags object = {}
 

@@ -13,7 +13,39 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 - [UV](https://www.uv.dev/)
 - [Taskfile](https://taskfile.dev/)
 
-### 2. Deploy resources
+### 2. Configure phone number auto-purchase (optional)
+
+Phone numbers are automatically purchased during deployment by default. You can customize the configuration by setting azd environment variables:
+
+```bash
+# Default: Auto-purchase GB toll-free number (no configuration needed)
+azd up
+
+# Configure for US toll-free instead
+azd env set AZURE_PHONE_NUMBER_COUNTRY US
+azd env set AZURE_PHONE_NUMBER_TYPE toll-free
+
+# Configure for GB geographic
+azd env set AZURE_PHONE_NUMBER_COUNTRY GB
+azd env set AZURE_PHONE_NUMBER_TYPE geographic
+
+# Disable auto-purchase entirely
+azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE false
+```
+
+Available configuration options:
+
+- `AZURE_PHONE_NUMBER_AUTO_PURCHASE`: `true` or `false` (default: `true`)
+- `AZURE_PHONE_NUMBER_COUNTRY`: Country code - `US`, `CA`, `GB`, `AU`, `FR`, `DE`, `IT`, `ES`, `NL`, `SE`, `NO`, `DK`, `FI`, `IE`, `CH`, `AT`, `BE`, `PT` (default: `GB`)
+- `AZURE_PHONE_NUMBER_TYPE`: `toll-free` or `geographic` (default: `toll-free`)
+
+You can view your current azd environment variables with:
+
+```bash
+azd env get-values
+```
+
+### 3. Deploy resources
 
 Run the following command to deploy the Azure resources defined in the `infra` folder (you'll be prompted to authenticate with Azure):
 
@@ -23,11 +55,50 @@ task setup:infra
 
 This will package up the code in the `api` folder, deploy the Azure resources defined in the `infra` folder, and deploy the packaged `api` to the Azure Container Apps environment.
 
-### 3. Purchase an ACS phone number
+A phone number will be automatically purchased after deployment (GB toll-free by default). The deployment is idempotent - it will reuse existing numbers that match your configuration and release any that don't match.
 
-You can purchase a phone number from the Azure portal or using the Azure CLI. Follow the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new) to purchase a phone number.
+### 4. Manage phone numbers
 
-### 4. Run API locally
+#### Using the CLI tool (recommended)
+
+The project includes a simple CLI for managing phone numbers located in `infra/scripts/`. The CLI automatically uses the same Azure Communication Services resource as your deployed application and has its dependencies self-contained.
+
+The CLI automatically loads environment variables from your azd project. If you're running from outside the project directory or don't have azd configured, you'll need to set `AZURE_ACS_ENDPOINT` manually:
+
+```bash
+# If needed, set the ACS endpoint (get this from Azure portal or azd env get-values)
+export AZURE_ACS_ENDPOINT="https://your-acs-resource.communication.azure.com"
+```
+
+**CLI Commands:**
+```bash
+# Show available commands
+uv run infra/scripts/phone_cli.py --help
+
+# List owned phone numbers
+uv run infra/scripts/phone_cli.py list
+
+# Search for available numbers (e.g., UK toll-free)
+uv run infra/scripts/phone_cli.py search GB toll-free
+
+# Purchase a phone number (defaults to GB toll-free)
+uv run infra/scripts/phone_cli.py purchase
+
+# Purchase a specific country/type with auto-confirmation
+uv run infra/scripts/phone_cli.py purchase US toll-free --yes
+
+# Ensure idempotent phone number configuration (used by deployment)
+uv run infra/scripts/phone_cli.py ensure GB toll-free --yes
+
+# Release a phone number
+uv run infra/scripts/phone_cli.py release +1234567890
+```
+
+#### Using Azure portal
+
+You can also purchase a phone number from the Azure portal using the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new).
+
+### 5. Run API locally
 
 #### First-time setup
 
@@ -72,7 +143,7 @@ You can purchase a phone number from the Azure portal or using the Azure CLI. Fo
 
 - Call the number you created in ACS to test the API is working. You should hear a greeting and be able to speak to the AI agent.
 
-### 5. Use Remote API
+### 6. Use Remote API
 
 Like with the local API, set up an Event Grid subscription for the remote API to respond to ACS `IncomingCall`, instead supplying the Container App's URL with the suffix `/calls/incoming`.
 
