@@ -34,8 +34,9 @@ input_audio_noise_reduction:
 input_audio_echo_cancellation:
   type: server_echo_cancellation
 
+# Disabled for now due to bug https://github.com/jjgriff93/ai-contact-centre/issues/16
 # input_audio_transcription:
-#   model: azure-fast-transcription
+#   model: azure-speech
 #   phrase_list: []
 
 # Optional general settings

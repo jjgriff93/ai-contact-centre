@@ -3,18 +3,18 @@ import base64
 import json
 import logging
 import os
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from semantic_kernel.connectors.mcp import MCPStreamableHttpPlugin
 from semantic_kernel.contents import (AudioContent, ChatHistory,
                                       RealtimeAudioEvent)
 
 from .agents.plugins import CallPlugin, DeliveryPlugin
-from .agents.utils import get_agent, handle_realtime_messages
-from .config import settings
+from .agents.utils import (get_agent, handle_realtime_messages,
+                           load_mcp_plugins_from_folder)
 from .dependencies import get_acs_client
 from .routers import calls
 
@@ -32,6 +32,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logging.getLogger().setLevel(LOG_LEVEL)
+logging.getLogger("kernel").setLevel(LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 
@@ -50,25 +51,24 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
     if not call_connection_id:
         logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions will be mocked.")
 
+    # Initialise chat history
     chat_history = ChatHistory()
 
-    # Initialise MCP plugin with async context manager
-    async with MCPStreamableHttpPlugin(
-        name="Orders API",
-        url=settings.MCP_ORDERS_URL,
-        load_prompts=False # APIM MCP servers only support tools and this will fail if left enabled
-    ) as orders_api_plugin:
+    # Load MCP plugins from YAML files and enter their async contexts
+    mcp_plugins = await load_mcp_plugins_from_folder()
+    async with AsyncExitStack() as stack:
+        bound_mcp_plugins = [await stack.enter_async_context(p) for p in mcp_plugins]
 
         # Load realtime agent from template and plugins
         realtime_agent = await get_agent(
             template_name="DeliveryAgent",
             plugins=[
+                *bound_mcp_plugins,
                 CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-                orders_api_plugin,
                 DeliveryPlugin()
             ],
             chat_history=chat_history,
-            agent_name="Ollie"
+            agent_name="Sam"
         )
 
         # Create the realtime client session
@@ -83,7 +83,6 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
                     # Receive data from the ACS client
                     stream_data = await websocket.receive_text()
                     data = json.loads(stream_data)
-                    logger.debug(f"Received data from ACS client: {data}")
 
                     # If audio send it to the Realtime service
                     if data["kind"] == "AudioData":
@@ -96,8 +95,8 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
                                 ),
                             )
                         )
-                except Exception:
-                    logger.info("Websocket connection closed.")
+                except Exception as e:
+                    logging.error(f"Error occurred while processing websocket message: {e}")
                     break
 
             receive_task.cancel()

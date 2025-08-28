@@ -18,10 +18,10 @@ turn_detection:
   silence_duration_ms: 800
   threshold: 0.8
 
-# input_audio_transcription:
-#   model: gpt-4o-transcribe
-#   language: en
-#   prompt: ""
+input_audio_transcription:
+  model: gpt-4o-transcribe
+  language: en
+  # prompt: ""
 
 # Optional general settings
 # temperature: 0.8

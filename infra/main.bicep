@@ -29,15 +29,15 @@ param apiExists bool
 @description('Id of the user or app to assign application roles')
 param principalId string
 
-@description('Tags that will be applied to all resources')
-param tags object = {}
+@description('Tags that will be applied to all resources (pass in env var as JSON string with single quotes)')
+param tags string = '{}'
 
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
 // Example usage:
 //   tags: union(tags, { 'azd-service-name': <service name in azure.yaml> })
-var commonTags = union(tags, {
+var commonTags = union(json(tags), {
   'azd-env-name': environmentName
 })
 

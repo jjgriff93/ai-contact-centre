@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_rea
     AzureRealtimeExecutionSettings
 from semantic_kernel.connectors.ai.realtime_client_base import \
     RealtimeClientBase
+from semantic_kernel.connectors.mcp import MCPStreamableHttpPlugin
 from semantic_kernel.contents import (ChatHistory, FunctionCallContent,
                                       FunctionResultContent)
 from semantic_kernel.functions import KernelArguments
@@ -150,6 +152,56 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
         plugins=plugins,
         settings=execution_settings,
     )
+
+def _expand_env_vars_in_obj(obj: Any) -> Any:
+    """Recursively expand ${VAR} environment variable references in strings within a nested object."""
+    if isinstance(obj, str):
+        return os.path.expandvars(obj)
+    if isinstance(obj, dict):
+        return {k: _expand_env_vars_in_obj(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env_vars_in_obj(v) for v in obj]
+    return obj
+
+async def load_mcp_plugins_from_folder(folder: str | Path | None = None) -> list[MCPStreamableHttpPlugin]:
+    """Load MCP servers from YAML files and return a list of MCPStreamableHttpPlugin instances.
+
+    The YAML schema per file:
+      - name: string (required)
+      - url: string (required, supports ${ENV_VAR})
+      - headers: object of string->string (optional, supports ${ENV_VAR})
+      - load_prompts: bool (optional, default False)
+      - enabled: bool (optional, default True)
+    """
+    folder_path = Path(folder) if folder else Path(__file__).parent / "mcp"
+    plugins: list[MCPStreamableHttpPlugin] = []
+    if not folder_path.exists():
+        return plugins
+
+    for file in sorted(folder_path.glob("*.y*ml")):
+        try:
+            with open(file, "r") as f:
+                raw = yaml.safe_load(f) or {}
+            cfg = _expand_env_vars_in_obj(raw)
+            if not cfg or cfg.get("enabled", True) is False:
+                continue
+            name = cfg.get("name")
+            url = cfg.get("url")
+            if not name or not url:
+                logger.warning(f"Skipping MCP config {file.name}: missing name or url")
+                continue
+            headers = cfg.get("headers") or None
+            load_prompts = bool(cfg.get("load_prompts", False))
+            plugin = MCPStreamableHttpPlugin(
+                name=name,
+                url=url,
+                headers=headers,
+                load_prompts=load_prompts,
+            )
+            plugins.append(plugin)
+        except Exception as e:
+            logger.error(f"Failed to load MCP plugin from {file}: {e}")
+    return plugins
 
 async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):
     """Function that handles the messages from the Realtime service.

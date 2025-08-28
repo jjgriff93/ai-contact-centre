@@ -1,0 +1,13 @@
+# Example MCP server configuration. Duplicate this file to add more servers.
+# Fields:
+# - name: Friendly name for the plugin (required)
+# - url: Server URL; env vars supported via ${VAR} (required)
+# - headers: Optional HTTP headers (e.g., Authorization)
+# - load_prompts: Whether to load prompts from server (APIM servers often require false)
+# - enabled: Toggle to include/exclude this server without deleting the file
+name: Orders API
+url: ${MCP_ORDERS_URL}
+# headers:
+#   Authorization: Bearer ${ORDERS_API_TOKEN}
+load_prompts: false
+enabled: true

@@ -18,7 +18,7 @@ class DeliveryPlugin:
     def get_available_slots_for_delivery(
         self,
         order_number: Annotated[str, "The order number to get delivery slots for."],
-        start_date: Annotated[str, "The start date for the delivery slots, defaulting to today. Use for pagination."] = date.today().isoformat(),
+        start_date: Annotated[str, "The start date for the delivery slots in ISO format, defaulting to today. Use for pagination."] = date.today().isoformat(),
         range_in_days: Annotated[int, "The number of days to look ahead for delivery slots."] = 7
     ) -> list[DeliverySlotModel]:
         """Get the slots that are available for delivery."""
@@ -30,6 +30,8 @@ class DeliveryPlugin:
         # Build candidate slots across the date range (two per day for now)
         candidates: list[str] = []
         days = max(0, int(range_in_days))
+        # TODO: Ensure date is in iso format in case the model passes the wrong format
+
         base_date = date.fromisoformat(start_date)
         for i in range(days):
             slot_date = (base_date + timedelta(days=i)).strftime("%Y-%m-%d")
