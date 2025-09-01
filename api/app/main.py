@@ -8,13 +8,11 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from semantic_kernel.connectors.mcp import MCPStreamableHttpPlugin
 from semantic_kernel.contents import (AudioContent, ChatHistory,
                                       RealtimeAudioEvent)
 
 from .agents.plugins import CallPlugin, DeliveryPlugin
 from .agents.utils import get_agent, handle_realtime_messages
-from .config import settings
 from .dependencies import get_acs_client
 from .routers import calls
 
@@ -48,61 +46,28 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
     call_connection_id = websocket.headers.get("x-ms-call-connection-id")
 
     if not call_connection_id:
-        logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions will be mocked.")
-
-    chat_history = ChatHistory()
-
-    # Prepare plugins list
-    plugins = [
-        CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-        DeliveryPlugin()
-    ]
+        logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions won't work.")
     
-    # Try to initialize MCP plugin, but fallback gracefully if it fails
-    orders_api_plugin = None
-    try:
-        # Attempt to create MCP plugin with a short timeout
-        orders_api_plugin = MCPStreamableHttpPlugin(
-            name="Orders API",
-            url=settings.MCP_ORDERS_URL,
-            load_prompts=False # APIM MCP servers only support tools and this will fail if left enabled
-        )
-        # Try to connect with timeout
-        import asyncio
-        await asyncio.wait_for(orders_api_plugin.connect(), timeout=5.0)
-        plugins.insert(1, orders_api_plugin)  # Insert between CallPlugin and DeliveryPlugin
-        logger.info("Successfully connected to MCP Orders API")
-    except Exception as e:
-        logger.warning(f"Failed to connect to MCP Orders API: {e}. Continuing without orders functionality.")
-        orders_api_plugin = None
+    # Determine if running in development mode (for transcription safety)
+    is_development_mode = not call_connection_id
     
     # Load realtime agent from template and plugins
+    chat_history = ChatHistory()
     realtime_agent = await get_agent(
         template_name="DeliveryAgent",
-        plugins=plugins,
+        plugins=[
+            CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
+            DeliveryPlugin()
+        ],
         chat_history=chat_history,
-        agent_name="Ollie"
+        agent_name="Archie"
     )
-    
-    # Handle the agent connection with proper cleanup
-    try:
-        await _handle_agent_connection(websocket, realtime_agent, chat_history)
-    finally:
-        # Clean up MCP connection if it was established
-        if orders_api_plugin:
-            try:
-                await orders_api_plugin.disconnect()
-            except Exception:
-                pass
 
-
-async def _handle_agent_connection(websocket: WebSocket, realtime_agent, chat_history: ChatHistory):
-    """Handle the agent connection and audio streaming."""
     # Create the realtime client session
     async with realtime_agent(create_response=True) as client:
         # Start handling the messages from the realtime client with callback to forward the audio to acs
         receive_task = asyncio.create_task(
-            handle_realtime_messages(websocket, client, chat_history)
+            handle_realtime_messages(websocket, client, chat_history, is_development_mode)
         )
         # Receive messages from the ACS client and send them to the realtime client
         while True:
