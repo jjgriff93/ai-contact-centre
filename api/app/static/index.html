@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Call Debugger</title>
+    <title>AI Contact Centre - Voice Call with Transcription</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -158,13 +158,56 @@
         .clear-btn:hover {
             background-color: #545b62;
         }
+        .transcription-container {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 20px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .transcript-entry {
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .transcript-entry.user {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            margin-left: auto;
+            text-align: right;
+        }
+        .transcript-entry.assistant {
+            background-color: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+            margin-right: auto;
+        }
+        .transcript-speaker {
+            font-weight: bold;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        .transcript-text {
+            color: #333;
+        }
+        .transcript-timestamp {
+            font-size: 10px;
+            color: #999;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Voice Call Debugger</h1>
-            <p>Test WebSocket audio streaming with microphone input</p>
+            <h1>AI Contact Centre - Voice Call with Transcription</h1>
+            <p>Test WebSocket audio streaming with microphone input and live transcription</p>
         </div>
 
         <div id="status" class="status disconnected">
@@ -175,9 +218,15 @@
             <button id="startBtn" class="btn btn-primary">Start Call</button>
             <button id="stopBtn" class="btn btn-danger" disabled>Stop Call</button>
             <button id="clearLogBtn" class="btn btn-secondary">Clear Log</button>
+            <button id="clearTranscriptBtn" class="btn btn-secondary">Clear Transcript</button>
         </div>
 
         <!-- Audio visuals removed as requested -->
+
+        <div>
+            <h3>Live Transcription</h3>
+            <div id="transcriptContainer" class="transcription-container"></div>
+        </div>
 
         <div>
             <h3>Event Log</h3>
@@ -207,8 +256,10 @@
                 this.startBtn = document.getElementById('startBtn');
                 this.stopBtn = document.getElementById('stopBtn');
                 this.clearLogBtn = document.getElementById('clearLogBtn');
+                this.clearTranscriptBtn = document.getElementById('clearTranscriptBtn');
                 this.statusDiv = document.getElementById('status');
                 this.logContainer = document.getElementById('logContainer');
+                this.transcriptContainer = document.getElementById('transcriptContainer');
                 
                 // Audio visuals removed
             }
@@ -217,6 +268,7 @@
                 this.startBtn.addEventListener('click', () => this.startCall());
                 this.stopBtn.addEventListener('click', () => this.stopCall());
                 this.clearLogBtn.addEventListener('click', () => this.clearLog());
+                this.clearTranscriptBtn.addEventListener('click', () => this.clearTranscript());
             }
 
             log(message, type = 'info') {
@@ -231,6 +283,37 @@
             clearLog() {
                 this.logContainer.innerHTML = '';
                 this.log('Log cleared', 'info');
+            }
+
+            clearTranscript() {
+                this.transcriptContainer.innerHTML = '';
+                this.log('Transcript cleared', 'info');
+            }
+
+            addTranscript(speaker, text, timestamp = null) {
+                const transcriptEntry = document.createElement('div');
+                transcriptEntry.className = `transcript-entry ${speaker}`;
+                
+                const speakerLabel = document.createElement('div');
+                speakerLabel.className = 'transcript-speaker';
+                speakerLabel.textContent = speaker === 'user' ? 'You' : 'AI Assistant';
+                
+                const transcriptText = document.createElement('div');
+                transcriptText.className = 'transcript-text';
+                transcriptText.textContent = text;
+                
+                transcriptEntry.appendChild(speakerLabel);
+                transcriptEntry.appendChild(transcriptText);
+                
+                if (timestamp !== null) {
+                    const timestampDiv = document.createElement('div');
+                    timestampDiv.className = 'transcript-timestamp';
+                    timestampDiv.textContent = `${timestamp}ms`;
+                    transcriptEntry.appendChild(timestampDiv);
+                }
+                
+                this.transcriptContainer.appendChild(transcriptEntry);
+                this.transcriptContainer.scrollTop = this.transcriptContainer.scrollHeight;
             }
 
             updateStatus(status, className) {
@@ -391,6 +474,12 @@
                 
                 if (data.kind === "AudioData") {
                     this.playAudioData(data.audioData.data);
+                } else if (data.kind === "Transcription") {
+                    const { speaker, text, timestamp } = data.data;
+                    this.addTranscript(speaker, text, timestamp);
+                    this.log(`Transcription [${speaker}]: ${text}`, 'info');
+                } else if (data.kind === "ChatHistory") {
+                    this.log(`Chat history updated: ${data.data.length} messages`, 'info');
                 }
             }
 

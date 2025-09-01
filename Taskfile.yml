@@ -11,11 +11,16 @@ tasks:
     cmds:
       - |
         devtunnel login
-        devtunnel create aicontactcentre --allow-anonymous
+        TUNNEL_NAME="aicontactcentre-$(azd env get-values | grep AZURE_ENV_NAME | cut -d'=' -f2 | tr -d '"' || echo "$(date +%s)")"
+        echo "Creating devtunnel with name: $TUNNEL_NAME"
+        devtunnel create $TUNNEL_NAME --allow-anonymous
         devtunnel port create -p 8000
   run:devtunnel:
     cmds:
-      - devtunnel host aicontactcentre
+      - |
+        TUNNEL_NAME="aicontactcentre-$(azd env get-values | grep AZURE_ENV_NAME | cut -d'=' -f2 | tr -d '"' || echo "$(date +%s)")"
+        echo "Hosting devtunnel: $TUNNEL_NAME"
+        devtunnel host $TUNNEL_NAME
   run:api:
     dir: api
     cmds:
