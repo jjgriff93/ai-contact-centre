@@ -25,7 +25,8 @@ from semantic_kernel.prompt_template import (KernelPromptTemplate,
 
 from ..config import settings
 from .azure_voice_live import (AzureVoiceLiveExecutionSettings,
-                               AzureVoiceLiveWebsocket)
+                               AzureVoiceLiveWebsocket,
+                               PatchedAzureRealtimeWebsocket)
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,8 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
             function_choice_behavior=FunctionChoiceBehavior.Auto(),
             **exec_payload,
         )
-        client_class = AzureRealtimeWebsocket
+        # Use patched base to sanitise non-string function results for realtime
+        client_class = PatchedAzureRealtimeWebsocket
     elif service == "azure_voice_live":
         execution_settings = AzureVoiceLiveExecutionSettings(
             function_choice_behavior=FunctionChoiceBehavior.Auto(),

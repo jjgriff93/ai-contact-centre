@@ -179,21 +179,67 @@ class AzureVoiceLiveSession(KernelBaseModel):
     animation: Optional[AzureVoiceLiveAnimation] = None
 
 
-class AzureVoiceLiveWebsocket(AzureRealtimeWebsocket):
-    """Azure Voice Live Websocket client."""
+# NOTE: We define a patched base class below and then subclass it for Voice Live.
+
+class PatchedAzureRealtimeWebsocket(AzureRealtimeWebsocket):
+    """Azure Realtime Websocket client with centralized function result sanitization.
+
+    Ensures function tool results are strings to prevent hanging in the realtime service.
+    """
 
     def __init__(
         self,
+        *,
         endpoint: str,
+        deployment_name: Optional[str] = None,
+        ad_token_provider: Optional[Any] = None,
+        api_key: Optional[str] = None,
+        api_version: Optional[str] = None,
+        plugins: Optional[List[Any]] = None,
+        settings: Optional[PromptExecutionSettings] = None,
         **kwargs: Any,
-    ):
-        # Voice Live uses a slightly different path structure to OpenAI Realtime
-        voicelive_ws_endpoint = endpoint.replace("https://", "wss://") + "voice-live"
+    ) -> None:
         super().__init__(
             endpoint=endpoint,
-            websocket_base_url=voicelive_ws_endpoint,
+            deployment_name=deployment_name,
+            ad_token_provider=ad_token_provider,
+            api_key=api_key,
+            api_version=api_version,
+            plugins=plugins,
+            settings=settings,
             **kwargs,
         )
+
+    @staticmethod
+    def _sanitize_function_result(event: RealtimeEvents) -> None:
+        if isinstance(event, RealtimeFunctionResultEvent):
+            # If the function response is not a string it will cause realtime service to hang indefinitely
+            # https://github.com/microsoft/semantic-kernel/issues/13003
+            result = event.function_result.result
+            if not isinstance(result, str):
+                import json
+
+                event.function_result.result = json.dumps(result)
+                logger.warning("Non-string function result converted to JSON string")
+
+    @override
+    async def send(self, event: RealtimeEvents, **kwargs: Any) -> None:
+        self._sanitize_function_result(event)
+        await super().send(event, **kwargs)
+
+
+class AzureVoiceLiveWebsocket(PatchedAzureRealtimeWebsocket):
+    """Azure Voice Live Websocket client."""
+
+    def __init__(self, **kwargs: Any):
+        # Voice Live uses a slightly different path structure to OpenAI Realtime
+        endpoint = kwargs.get("endpoint")
+        if not endpoint:
+            raise ValueError("'endpoint' is required to initialize AzureVoiceLiveWebsocket")
+        voicelive_ws_endpoint = endpoint.replace("https://", "wss://") + "voice-live"
+        # Inject the custom websocket base URL
+        kwargs["websocket_base_url"] = voicelive_ws_endpoint
+        super().__init__(**kwargs)
 
     @override
     def get_prompt_execution_settings_class(self) -> type[PromptExecutionSettings]:
@@ -201,47 +247,37 @@ class AzureVoiceLiveWebsocket(AzureRealtimeWebsocket):
 
     @override
     async def send(self, event: RealtimeEvents, **kwargs: Any) -> None:
-        """Send an event to the Websocket client. We need to override to handle the modified session update event"""
-        match event:
-            case RealtimeFunctionResultEvent():
-                # If the function response is not a string it will cause realtime service to hang indefinitely https://github.com/microsoft/semantic-kernel/issues/13003
-                # Convert any non-string responses to a JSON string for workaround
-                result = event.function_result.result
-                if not isinstance(result, str):
-                    import json
+        """Send an event to the Websocket client.
 
-                    event.function_result.result = json.dumps(result)
-                    logger.warning("Non-string function result converted to JSON string")
-
-                await super().send(event, **kwargs)
-
-            case _:
-                # If a SESSION_UPDATE we need to handle differently for Voice Live due to OpenAI SDK expecting different exec settings
-                if event.service_type == SendEvents.SESSION_UPDATE:
-                    data = event.service_event
-                    if not data:
-                        logger.error("Event data is empty")
-                        return
-                    settings = data.get("settings", None)
-                    if not settings:
-                        logger.error("Event data does not contain 'settings'")
-                        return
-                    try:
-                        settings = self.get_prompt_execution_settings_from_settings(settings)
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to properly create settings from passed settings: {settings}, error: {e}"
-                        )
-                        return
-                    assert isinstance(settings, self.get_prompt_execution_settings_class())  # nosec
-                    if not settings.ai_model_id:  # type: ignore
-                        settings.ai_model_id = self.ai_model_id  # type: ignore
-                    # Pass the event as a dictionary instead of Pydantic model to avoid OpenAI SDK validation error in send()
-                    await self._send(
-                        {
-                            "type": SendEvents.SESSION_UPDATE.value,
-                            "session": settings.prepare_settings_dict(),  # type: ignore
-                        }
-                    )
-                else:
-                    await super().send(event, **kwargs)
+        We need to override to handle the modified session update event for Voice Live
+        due to OpenAI SDK expecting different exec settings. Function result sanitization
+        is handled by the patched base class.
+        """
+        if event.service_type == SendEvents.SESSION_UPDATE:
+            data = event.service_event
+            if not data:
+                logger.error("Event data is empty")
+                return
+            settings = data.get("settings", None)
+            if not settings:
+                logger.error("Event data does not contain 'settings'")
+                return
+            try:
+                settings = self.get_prompt_execution_settings_from_settings(settings)
+            except Exception as e:
+                logger.error(
+                    f"Failed to properly create settings from passed settings: {settings}, error: {e}"
+                )
+                return
+            assert isinstance(settings, self.get_prompt_execution_settings_class())  # nosec
+            if not settings.ai_model_id:  # type: ignore
+                settings.ai_model_id = self.ai_model_id  # type: ignore
+            # Pass the event as a dictionary instead of Pydantic model to avoid OpenAI SDK validation error in send()
+            await self._send(
+                {
+                    "type": SendEvents.SESSION_UPDATE.value,
+                    "session": settings.prepare_settings_dict(),  # type: ignore
+                }
+            )
+        else:
+            await super().send(event, **kwargs)
