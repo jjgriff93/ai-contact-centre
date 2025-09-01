@@ -205,6 +205,9 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
                 user_transcript = _get(se, "transcript") or ''
                 logger.info(f" User:-- {user_transcript}")
+                # Add user message to chat history
+                if user_transcript:
+                    chat_history.add_user_message(user_transcript)
                 # Send user transcription to frontend
                 await websocket.send_text(
                     json.dumps(
