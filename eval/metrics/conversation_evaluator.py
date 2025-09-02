@@ -20,5 +20,6 @@ class ConversationEvaluator:
             return ConversationMetrics()
 
         return ConversationMetrics(
+            # Conversation lines contain "assistant" and "user" messages, both combined are 1 turn
             total_turns=len(conversation["messages"]) // 2
         )
