@@ -298,7 +298,7 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                             )
                         )
                 case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                    logger.error(f"  Error: {_get(se, "error") or '<unknown>'}")
+                    logger.error(f"  Error: {_get(se, 'error') or '<unknown>'}")
                 case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
                     transcript = _get(se, "transcript")
                     logger.info(f" AI:-- {transcript or ''}")
@@ -319,8 +319,6 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                                     }
                                 )
                             )
-                case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                    logger.error(f"  Error: {_get(se, 'error') or '<unknown>'}")
                 case ListenEvents.RESPONSE_DONE:
                     logger.info("Response Done Message")
                     response = _get(se, "response")
@@ -336,12 +334,6 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                             logger.debug("  Status Details present but could not be serialized")
                     # Send chat history (including function calls) to client
                     idx_first_msg_to_send = await _send_chat_history(idx_first_msg_to_send)
-                case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
-                    transcript = _get(se, "transcript")
-                    logger.info(f" AI:-- {transcript or ''}")
-                    # Add assistant message to chat history
-                    if transcript:
-                        chat_history.add_assistant_message(transcript)
                 case SendEvents.CONVERSATION_ITEM_CREATE:
                     # Add function call result to chat history
                     function_result = getattr(event, "function_result", None)
