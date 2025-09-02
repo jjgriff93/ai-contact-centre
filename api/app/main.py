@@ -51,7 +51,9 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
     if not call_connection_id:
         logger.warning("No call connection ID provided in headers indicating direct connection (not ACS). Certain call functions will be mocked.")
 
-    # Initialise chat history
+    # Determine if running in development mode (for transcription safety)
+    is_development_mode = not call_connection_id
+
     chat_history = ChatHistory()
 
     # Load MCP plugins from YAML files and enter their async contexts
@@ -92,7 +94,7 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
         async with realtime_agent(create_response=True) as client:
             # Start handling the messages from the realtime client with callback to forward the audio to acs
             receive_task = asyncio.create_task(
-                handle_realtime_messages(websocket, client, chat_history)
+                handle_realtime_messages(websocket, client, chat_history, is_development_mode)
             )
             # Receive messages from the ACS client and send them to the realtime client
             while True:

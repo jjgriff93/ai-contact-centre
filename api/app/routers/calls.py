@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 @router.post("/calls/incoming")
 async def incoming_call_handler(events: list[dict], acs_client=Depends(get_acs_client)):
     """Handle incoming call events from Azure Communication Services."""
+    logger.info(f"Received {len(events)} events")
+    
     # This should be set in env when running locally to devtunnel uri
     if not settings.AZURE_ACS_CALLBACK_HOST_URI:
         # When running in container app, this will be the request host uri
@@ -39,16 +41,18 @@ async def incoming_call_handler(events: list[dict], acs_client=Depends(get_acs_c
     logger.info(f"Call event received. Using callback events URI: {callback_events_uri}")
   
     for event_dict in events:
-        event = EventGridEvent.from_dict(event_dict)
+        logger.info(f"Processing event: {event_dict.get('eventType', 'Unknown')}")
+        try:
+            event = EventGridEvent.from_dict(event_dict)
+            logger.info(f"Event parsed successfully: {event.event_type}")
 
-        match event.event_type:
-            case SystemEventNames.EventGridSubscriptionValidationEventName:
+            if event.event_type == SystemEventNames.EventGridSubscriptionValidationEventName:
                 logger.info("Validating subscription")
                 validation_code = event.data["validationCode"]
                 validation_response = {"validationResponse": validation_code}
+                logger.info(f"Returning validation response: {validation_response}")
                 return validation_response
-
-            case SystemEventNames.AcsIncomingCallEventName:
+            elif event.event_type == SystemEventNames.AcsIncomingCallEventName:
                 logger.debug("Incoming call received: data=%s", event.data)
                 caller_id = (
                     event.data["from"]["phoneNumber"]["value"]
@@ -84,9 +88,13 @@ async def incoming_call_handler(events: list[dict], acs_client=Depends(get_acs_c
                     ),
                 )
                 logger.info(f"Answered call for connection id: {answer_call_result.call_connection_id}")
-            case _:
+            else:
                 logger.debug("Event type not handled: %s", event.event_type)
                 logger.debug("Event data: %s", event.data)
+        except Exception as e:
+            logger.error(f"Error processing event: {e}")
+            import traceback
+            traceback.print_exc()
 
 @router.post("/calls/callbacks/{contextId}")
 async def callbacks(contextId: str, events: list[dict], acs_client=Depends(get_acs_client)):

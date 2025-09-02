@@ -34,10 +34,11 @@ input_audio_noise_reduction:
 input_audio_echo_cancellation:
   type: server_echo_cancellation
 
-# Disabled for now due to bug https://github.com/jjgriff93/ai-contact-centre/issues/16
-# input_audio_transcription:
-#   model: azure-speech
-#   phrase_list: []
+input_audio_transcription:
+  model: whisper-1
+# azure-speech and azure-fast-transcription cause bug https://github.com/jjgriff93/ai-contact-centre/issues/16
+# model: azure-speech
+# phrase_list: []
 
 # Optional general settings
 # temperature: 0.8
