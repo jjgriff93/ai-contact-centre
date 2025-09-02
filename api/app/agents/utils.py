@@ -151,7 +151,7 @@ async def get_agent(template_name: str, plugins: list[object], chat_history: Cha
         settings=execution_settings,
     )
 
-async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory):
+async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory, is_development_mode: bool = False):
     """Function that handles the messages from the Realtime service.
 
     This function only handles the non-audio messages.
@@ -203,7 +203,25 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                     )
                 )
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
-                logger.info(f" User:-- {_get(se, "transcript") or ''}")
+                user_transcript = _get(se, "transcript") or ''
+                logger.info(f" User:-- {user_transcript}")
+                # Add user message to chat history
+                if user_transcript:
+                    chat_history.add_user_message(user_transcript)
+                # Send user transcription to frontend (only in development mode)
+                if is_development_mode:
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "kind": "Transcription",
+                                "data": {
+                                    "speaker": "user",
+                                    "text": user_transcript,
+                                    "timestamp": _get(se, "audio_start_ms") or 0
+                                }
+                            }
+                        )
+                    )
             case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
                 logger.error(f"  Error: {_get(se, "error") or '<unknown>'}")
             case ListenEvents.RESPONSE_DONE:
@@ -235,6 +253,20 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
                 # Add assistant message to chat history
                 if transcript:
                     chat_history.add_assistant_message(transcript)
+                    # Send assistant transcription to frontend (only in development mode)
+                    if is_development_mode:
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "kind": "Transcription",
+                                    "data": {
+                                        "speaker": "assistant",
+                                        "text": transcript,
+                                        "timestamp": None  # No timestamp available for assistant transcripts
+                                    }
+                                }
+                            )
+                        )
             case SendEvents.CONVERSATION_ITEM_CREATE:
                 # Add function call result to chat history
                 function_result = getattr(event, "function_result", None)

@@ -34,9 +34,8 @@ input_audio_noise_reduction:
 input_audio_echo_cancellation:
   type: server_echo_cancellation
 
-# input_audio_transcription:
-#   model: azure-fast-transcription
-#   phrase_list: []
+input_audio_transcription:
+  model: whisper-1
 
 # Optional general settings
 # temperature: 0.8
