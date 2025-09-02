@@ -54,7 +54,7 @@ class DeliveryPlugin:
         slots = [DeliverySlotModel(id=str(idx + 1), start_time=t) for idx, t in enumerate(chosen_times)]
 
         return slots
-    
+
     @kernel_function
     def schedule_delivery(
         self,

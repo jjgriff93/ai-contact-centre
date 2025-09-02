@@ -16,6 +16,15 @@
     },
     "tags": {
       "value": "${AZURE_TAGS}"
+    },
+    "phoneNumberAutoPurchase": {
+      "value": "${AZURE_PHONE_NUMBER_AUTO_PURCHASE}"
+    },
+    "phoneNumberCountry": {
+      "value": "${AZURE_PHONE_NUMBER_COUNTRY}"
+    },
+    "phoneNumberType": {
+      "value": "${AZURE_PHONE_NUMBER_TYPE}"
     }
   }
 }
