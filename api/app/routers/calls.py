@@ -17,11 +17,6 @@ from ..dependencies import get_acs_client
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.post("/calls/test-validation")
-async def test_validation_handler():
-    """Test validation endpoint."""
-    return {"validationResponse": "test-success"}
-
 @router.post("/calls/incoming")
 async def incoming_call_handler(events: list[dict], acs_client=Depends(get_acs_client)):
     """Handle incoming call events from Azure Communication Services."""
