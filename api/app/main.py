@@ -57,7 +57,24 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
     # Load MCP plugins from YAML files and enter their async contexts
     mcp_plugins = await load_mcp_plugins_from_folder()
     async with AsyncExitStack() as stack:
-        bound_mcp_plugins = [await stack.enter_async_context(p) for p in mcp_plugins]
+        bound_mcp_plugins = []
+        for p in mcp_plugins:
+            try:
+                bound_mcp_plugins.append(await stack.enter_async_context(p))
+            except Exception:
+                # Notify client and close with an internal error code if MCP connect fails
+                err_message = {
+                    "kind": "Error",
+                    "code": "MCPPluginConnectionError",
+                    "message": "Failed to connect to an MCP server. Check server availability and configuration.",
+                }
+                try:
+                    await websocket.send_text(json.dumps(err_message))
+                except Exception:
+                    pass
+                logger.exception("MCP plugin connection failed while establishing websocket")
+                await websocket.close(code=1011)
+                return
 
         # Load realtime agent from template and plugins
         realtime_agent = await get_agent(

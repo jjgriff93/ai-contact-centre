@@ -233,62 +233,94 @@ async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientB
             cur = getattr(cur, part, None)
         return cur if cur is not None else default
 
+    async def _send_chat_history(from_index: int) -> int:
+        """Send chat history delta to the client and return new index marker."""
+        try:
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "kind": "ChatHistory",
+                        "data": export_chat_history(chat_history, from_index=from_index),
+                    }
+                )
+            )
+        except Exception:
+            logger.exception("Failed to send ChatHistory to websocket")
+        return len(chat_history.messages)
+
     idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
-    async for event in client.receive(audio_output_callback=from_realtime_to_acs):
-        se = getattr(event, "service_event", None)
-        match event.service_type:
-            case ListenEvents.SESSION_CREATED:
-                logger.info("Session Created Message")
-                logger.debug(f"  Session Id: {_get(se, "session.id") or '<unknown>'}")
-            case ListenEvents.ERROR:
-                logger.error(f"  Error: {_get(se, "error") or '<unknown>'}")
-            case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
-                logger.info("Input Audio Buffer Cleared Message")
-            case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-                audio_start_ms = _get(se, "audio_start_ms")
-                logger.debug(
-                    f"Voice activity detection started at {audio_start_ms if audio_start_ms is not None else '<unknown>'} [ms]"
-                )
-                await websocket.send_text(
-                    json.dumps(
-                        {"Kind": "StopAudio", "AudioData": None, "StopAudio": {}}
+
+    try:
+        async for event in client.receive(audio_output_callback=from_realtime_to_acs):
+            se = getattr(event, "service_event", None)
+            match event.service_type:
+                case ListenEvents.SESSION_CREATED:
+                    logger.info("Session Created Message")
+                    logger.debug(f"  Session Id: {_get(se, 'session.id') or '<unknown>'}")
+                case ListenEvents.ERROR:
+                    # Surface tool/MCP errors gracefully to the user and continue
+                    err = _get(se, "error") or "<unknown>"
+                    logger.error(f"  Error: {err}")
+                    chat_history.add_assistant_message(
+                        "I hit a temporary issue calling a tool. Let's try again or continue without it."
                     )
-                )
-            case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
-                logger.info(f" User:-- {_get(se, "transcript") or ''}")
-            case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                logger.error(f"  Error: {_get(se, "error") or '<unknown>'}")
-            case ListenEvents.RESPONSE_DONE:
-                logger.info("Response Done Message")
-                response = _get(se, "response")
-                response_id = _get(response, "id")
-                logger.debug(f"  Response Id: {response_id or '<unknown>'}")
-                status_details = _get(response, "status_details")
-                if status_details:
-                    try:
-                        logger.debug(
-                            f"  Status Details: {status_details.model_dump_json()}"
+                    idx_first_msg_to_send = await _send_chat_history(idx_first_msg_to_send)
+                case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
+                    logger.info("Input Audio Buffer Cleared Message")
+                case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+                    audio_start_ms = _get(se, "audio_start_ms")
+                    logger.debug(
+                        f"Voice activity detection started at {audio_start_ms if audio_start_ms is not None else '<unknown>'} [ms]"
+                    )
+                    await websocket.send_text(
+                        json.dumps(
+                            {"Kind": "StopAudio", "AudioData": None, "StopAudio": {}}
                         )
-                    except Exception:
-                        logger.debug("  Status Details present but could not be serialized")
-                # Send chat history (including function calls) to client
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "kind": "ChatHistory",
-                            "data": export_chat_history(chat_history, from_index=idx_first_msg_to_send)
-                        }
                     )
+                case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
+                    logger.info(f" User:-- {_get(se, 'transcript') or ''}")
+                case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
+                    logger.error(f"  Error: {_get(se, 'error') or '<unknown>'}")
+                case ListenEvents.RESPONSE_DONE:
+                    logger.info("Response Done Message")
+                    response = _get(se, "response")
+                    response_id = _get(response, "id")
+                    logger.debug(f"  Response Id: {response_id or '<unknown>'}")
+                    status_details = _get(response, "status_details")
+                    if status_details:
+                        try:
+                            logger.debug(
+                                f"  Status Details: {status_details.model_dump_json()}"
+                            )
+                        except Exception:
+                            logger.debug("  Status Details present but could not be serialized")
+                    # Send chat history (including function calls) to client
+                    idx_first_msg_to_send = await _send_chat_history(idx_first_msg_to_send)
+                case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
+                    transcript = _get(se, "transcript")
+                    logger.info(f" AI:-- {transcript or ''}")
+                    # Add assistant message to chat history
+                    if transcript:
+                        chat_history.add_assistant_message(transcript)
+                case SendEvents.CONVERSATION_ITEM_CREATE:
+                    # Add function call result to chat history
+                    function_result = getattr(event, "function_result", None)
+                    if function_result is not None:
+                        chat_history.add_tool_message([function_result])
+        
+    except Exception as e:
+        # Catch-all to prevent websocket handler from crashing on tool/MCP failures
+        logger.exception("Realtime receive loop terminated due to error")
+        # Inform the frontend in a non-fatal way
+        try:
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "kind": "AgentError",
+                        "message": "A tool call failed. The assistant will continue.",
+                        "details": str(e),
+                    }
                 )
-                idx_first_msg_to_send = len(chat_history.messages)
-            case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
-                transcript = _get(se, "transcript")
-                logger.info(f" AI:-- {transcript or ''}")
-                # Add assistant message to chat history
-                if transcript:
-                    chat_history.add_assistant_message(transcript)
-            case SendEvents.CONVERSATION_ITEM_CREATE:
-                # Add function call result to chat history
-                function_result = getattr(event, "function_result", None)
-                if function_result is not None:
-                    chat_history.add_tool_message([function_result])
+            )
+        except Exception:
+            pass

@@ -10,8 +10,11 @@ from pydantic import Field
 from semantic_kernel.connectors.ai import PromptExecutionSettings
 from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
                                                    SendEvents)
-from semantic_kernel.contents import (RealtimeEvents,
-                                      RealtimeFunctionResultEvent)
+from semantic_kernel.contents import (ChatMessageContent,
+                                      FunctionResultContent, ImageContent,
+                                      RealtimeEvents,
+                                      RealtimeFunctionResultEvent, TextContent)
+from semantic_kernel.contents.binary_content import BinaryContent
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
 if sys.version_info >= (3, 12):
@@ -215,12 +218,23 @@ class PatchedAzureRealtimeWebsocket(AzureRealtimeWebsocket):
         if isinstance(event, RealtimeFunctionResultEvent):
             # If the function response is not a string it will cause realtime service to hang indefinitely
             # https://github.com/microsoft/semantic-kernel/issues/13003
+            # We can work around by serializing depending on what type of result it is
+            # - If MCP response, it will be list with one element
             result = event.function_result.result
-            if not isinstance(result, str):
-                import json
+            if isinstance(result, list):
+                if isinstance(result[0], TextContent):
+                    serialized_res = result[0].text
+                elif isinstance(result[0], ImageContent):
+                    serialized_res = result[0].data_uri
+                elif isinstance(result[0], BinaryContent):
+                    serialized_res = result[0].data_string
+                else:
+                    serialized_res = str(result)
+            # - If anything else, we can use the FunctionResultContent.__str__ to serialize
+            else:
+                serialized_res = str(event.function_result)
 
-                event.function_result.result = json.dumps(result)
-                logger.warning("Non-string function result converted to JSON string")
+            event.function_result.result = serialized_res
 
     @override
     async def send(self, event: RealtimeEvents, **kwargs: Any) -> None:
