@@ -96,15 +96,15 @@ module aiModelsDeploy 'modules/ai-project.bicep' = {
         }
       }
       {
-        name: 'tts' // gpt-4o-mini-tts not currently available in Sweden Central
+        name: 'gpt-4o-mini-tts' // gpt-4o-mini-tts not currently available in Sweden Central
         model: {
-          name: 'tts'
+          name: 'gpt-4o-mini-tts'
           format: 'OpenAI'
-          version: '001'
+          version: '2025-03-20'
         }
         sku: {
-          name: 'Standard'
-          capacity: 3
+          name: 'GlobalStandard'
+          capacity: 100
         }
       }
       {

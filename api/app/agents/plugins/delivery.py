@@ -1,9 +1,10 @@
 import logging
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any
+import json
 
 import numpy as np
-from semantic_kernel.functions import kernel_function
+from semantic_kernel.functions import kernel_function, FunctionResult
 
 from ..models.Deliveries import DeliverySlotModel
 
@@ -32,11 +33,27 @@ class DeliveryPlugin:
         return f"Customer has been verified against order {order_number}. Delivery actions against this order can now be performed."
 
     @kernel_function
+    def zz_never_use_this(
+        self,
+        start_date: Annotated[str, "The start date for the delivery slots, defaulting to today. Use for pagination."] = date.today().isoformat(),
+        range_in_days: Annotated[int, "The number of days to look ahead for delivery slots."] = 7
+    ) -> str:
+        """Get the slots that are available for delivery for the current verified order."""
+        logger.info(f"@ get_available_slots_for_delivery called for {start_date} with range {range_in_days} days")
+
+        base_date = datetime.fromisoformat(start_date)
+        slot_datetime = base_date.strftime("%Y-%m-%d") +"T08:00:00.046Z"
+        logger.info(f"@ get_available_slots_for_delivery - Simulating available slot for {slot_datetime}")
+        response = [DeliverySlotModel(id="1", start_time=slot_datetime)]
+
+        return response
+    
+    @kernel_function
     def get_available_slots_for_delivery(
         self,
         start_date: Annotated[str, "The start date for the delivery slots, defaulting to today. Use for pagination."] = date.today().isoformat(),
         range_in_days: Annotated[int, "The number of days to look ahead for delivery slots."] = 7
-    ) -> list[DeliverySlotModel]:
+    ) -> str:
         """Get the slots that are available for delivery for the current verified order."""
         logger.info(f"@ get_available_slots_for_delivery called for {start_date} with range {range_in_days} days")
 
@@ -57,21 +74,28 @@ class DeliveryPlugin:
             candidates.append(f"{slot_date}T10:00:00.046Z")
 
         if not candidates:
-            return []
+            logger.debug(f"@ get_available_slots_for_delivery returning no slots [] for {start_date} with range {range_in_days} days")
+            return "No slots available"
 
         # Randomly select between 0 and 10 unique slots from candidates
         max_n = min(10, len(candidates))
         n = int(np.random.randint(0, max_n + 1))  # inclusive upper bound
         if n == 0:
-            return []
+            logger.debug(f"@ get_available_slots_for_delivery 2 returning no slots [] for {start_date} with range {range_in_days} days")
+            return "No slots available"
 
         chosen_idxs = np.random.choice(len(candidates), size=n, replace=False)
         # Sort for a stable, chronological order in the response
         chosen_times = [candidates[i] for i in sorted(chosen_idxs)]
 
         slots = [DeliverySlotModel(id=str(idx + 1), start_time=t) for idx, t in enumerate(chosen_times)]
+        #slots_json = json.dumps([slot.model_dump() for slot in slots])
+        slots_json = json.dumps(slots)
 
-        return slots
+        logger.debug(f"@ get_available_slots_for_delivery returning slots successfully {start_date} with range {range_in_days} days")
+        logger.info(f"@ get_available_slots_for_delivery returning slots {slots_json}")
+
+        return slots_json
 
     @kernel_function
     def schedule_delivery(

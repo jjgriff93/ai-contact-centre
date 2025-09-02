@@ -1,0 +1,19 @@
+evaluation_models:
+  chat_deployment: "gpt-4o-realtime-preview"
+  stt_deployment: "whisper-1"
+  tts_deployment: "tts-1"
+  voice: "alloy"
+
+evaluation:
+  max_turns: 8
+  exit_terms: ["exit", "goodbye", "bye", "quit", "stop"]
+  thresholds:
+    vad_silence_duration: 1.0  # seconds
+    turn_timeout: 30.0      # seconds
+
+paths:
+  testcases_dir: "testcases"
+  eval_dataset_file: "eval_dataset.json"
+
+logging:
+  level: "INFO"

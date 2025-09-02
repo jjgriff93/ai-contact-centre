@@ -1,12 +1,14 @@
+import argparse
 import asyncio
 import json
 import logging
 import os
 import time
+import yaml
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.ai.evaluation import evaluate, ContentSafetyEvaluator, IndirectAttackEvaluator
@@ -18,45 +20,58 @@ from utils import (ask_proxy_human,
                    speech_to_text_pcm, text_to_speech_pcm,
                    convert_json_to_jsonl)
 from voice_call_client import VoiceCallClient
+from config.eval_config import AppConfig, load_config, Thresholds
 
 
 # -----------------------------------------------------------------------------
 # Configuration & logging
 # -----------------------------------------------------------------------------
 
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-)
+def configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=level.upper(),
+        format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    )
+    
 logger = logging.getLogger(__name__)
-
-# Load environment variables from azd .env file
-load_azd_env()
-
-AZURE_AI_SERVICES_ENDPOINT = os.getenv("AZURE_AI_SERVICES_ENDPOINT")
-
-if not AZURE_AI_SERVICES_ENDPOINT:
-    raise ValueError("AZURE_AI_SERVICES_ENDPOINT environment variable is not set.")
 
 # Audio constants (keep in one place)
 SAMPLE_RATE_HZ = 24_000
 SAMPLE_WIDTH_BYTES = 2  # 16-bit
 CHANNELS = 1
 
-# -----------------------------------------------------------------------------
-# Azure OpenAI client (consider dependency injection for testability)
-# -----------------------------------------------------------------------------
-token_provider = get_bearer_token_provider(
-    DefaultAzureCredential(exclude_managed_identity_credential=True),
-    "https://cognitiveservices.azure.com/.default",
-)
 
-aoai_client = AsyncAzureOpenAI(
-    azure_endpoint=AZURE_AI_SERVICES_ENDPOINT,
-    azure_ad_token_provider=token_provider,
-    api_version="2024-02-15-preview",
-)
+def create_aoai_client() -> AsyncAzureOpenAI:
+    AZURE_AI_SERVICES_ENDPOINT = os.getenv("AZURE_AI_SERVICES_ENDPOINT")
+    if not AZURE_AI_SERVICES_ENDPOINT:
+        raise ValueError("AZURE_AI_SERVICES_ENDPOINT environment variable is not set.")
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(exclude_managed_identity_credential=True),
+        "https://cognitiveservices.azure.com/.default",
+    )
+
+    return AsyncAzureOpenAI(
+        azure_endpoint=AZURE_AI_SERVICES_ENDPOINT,
+        azure_ad_token_provider=token_provider,
+        api_version="2024-02-15-preview",
+    )
+
+
+#AZURE_AI_SERVICES_ENDPOINT = os.getenv("AZURE_AI_SERVICES_ENDPOINT")
+
+#if not AZURE_AI_SERVICES_ENDPOINT:
+#    raise ValueError("AZURE_AI_SERVICES_ENDPOINT environment variable is not set.")
+
+#token_provider = get_bearer_token_provider(
+#    DefaultAzureCredential(exclude_managed_identity_credential=True),
+#    "https://cognitiveservices.azure.com/.default",
+#)
+#aoai_client = AsyncAzureOpenAI(
+#    azure_endpoint=AZURE_AI_SERVICES_ENDPOINT,
+#    azure_ad_token_provider=token_provider,
+#    api_version="2024-02-15-preview",
+#)
 
 # -----------------------------------------------------------------------------
 # Types & state
@@ -185,10 +200,18 @@ async def send_text_to_server(harness: VoiceCallClient, text: str) -> bytes:
 class ProxyHumanConversator:
     """Test scenario for proxy human interaction that serves as an evaluation target."""
 
-    def __init__(self, output_dir: str, max_turns: int = 8) -> None:
+    def __init__(
+            self, 
+            aoai_client: AsyncAzureOpenAI, 
+            output_dir: str, 
+            max_turns: int = 8, 
+            thresholds: Thresholds = Thresholds()
+    ) -> None:
+        self.aoai_client = aoai_client 
         self.output_dir = output_dir
         self.max_turns = max_turns
         self.EXIT_TERMS = {"exit", "goodbye", "bye", "quit", "stop"}
+        self.thresholds = thresholds
 
     def __call__(self, *, scenario_name: str, instructions: str, **kwargs) -> Dict[str, object]:
         """
@@ -330,7 +353,7 @@ class ProxyHumanConversator:
         logger.info("\n".join(transcript_lines))
 
 
-def run_test_suite(azure_ai_project_endpoint: str) -> None:
+def run_test_suite(cfg: AppConfig) -> None:
     """Run a suite of test scenarios using the evaluate() method."""
 
     testcases_dir = Path(__file__).parent / "testcases"
@@ -341,14 +364,29 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
     eval_data_path = str(testcases_dir / "eval_dataset.json")
     eval_jsonl_path = convert_json_to_jsonl(eval_data_path)
 
+    azure_ai_project_endpoint = os.environ.get("AZURE_AI_PROJECT_ENDPOINT")
+    if not azure_ai_project_endpoint:
+        raise ValueError("Missing environment variable: AZURE_AI_PROJECT_ENDPOINT")
+    
     # Run evaluation across all test cases
     evaluation_name = f"conversation-tests-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     azure_evaluator_args = {"credential": DefaultAzureCredential(), "azure_ai_project": azure_ai_project_endpoint}
+    
+    aoai_client = create_aoai_client()
+
+    phc = ProxyHumanConversator(
+            aoai_client=aoai_client,
+            max_turns=cfg.evaluation.max_turns,
+            exit_terms=cfg.evaluation.exit_terms,
+            thresholds=cfg.evaluation.thresholds,
+            output_dir=output_dir,
+    )
+    
     # os.environ["PF_WORKER_COUNT"] = "1"  # Max concurrency for eval target run  #TODO: useful?
     result = evaluate(
         evaluation_name=evaluation_name,
         data=eval_jsonl_path,
-        target=ProxyHumanConversator(max_turns=8, output_dir=output_dir),
+        target=phc,  # ProxyHumanConversator(max_turns=8, output_dir=output_dir),
         evaluators={
             "function_calls": FunctionCallEvaluator(),
             "conversation": ConversationEvaluator(),
@@ -376,10 +414,15 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Voice agent evaluation harness")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
+    args = parser.parse_args()
 
-    try:
-        azure_ai_project_endpoint = os.environ["AZURE_AI_PROJECT_ENDPOINT"]
-    except KeyError as e:
-        raise ValueError(f"Missing environment variable: {e}") from e
+    # Load environment variables from azd .env file - endpoints etc.
+    load_azd_env()
 
-    run_test_suite(azure_ai_project_endpoint)
+    # Load experiment config
+    cfg = load_config(args.config)
+    configure_logging(cfg.logging.level)
+
+    run_test_suite(cfg)

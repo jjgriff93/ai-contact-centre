@@ -56,8 +56,13 @@ class VoiceCallClient:
         self.websocket = await websockets.connect(
             self.websocket_url,
             additional_headers=headers,  # websockets uses 'additional_headers'
+            ping_interval=20,   # how often to send pings (None disables)
+            ping_timeout=30,    # how long to wait for pong
+            close_timeout=10,   # how long to wait during close handshake
+            max_queue=None      # avoid backpressure deadlocks (optional)
         )
         logger.info("Connected to %s", self.websocket_url)
+        
 
     async def send_audio_chunk(self, audio_data: bytes) -> None:
         """Send an audio chunk to the WebSocket (base64-encoded PCM)."""
@@ -135,7 +140,7 @@ class VoiceCallClient:
     
     async def wait_for_assistant_to_start_speaking(
         self,
-        timeout_seconds: float = 10.0,
+        timeout_seconds: float = 40.0,
         poll_interval_seconds: float = 0.3,
     ) -> None:
         """
@@ -165,8 +170,8 @@ class VoiceCallClient:
 
     async def wait_for_assistant_turn_end(
         self,
-        silence_threshold_seconds: float = 4,
-        timeout_seconds: float = 10.0,
+        silence_threshold_seconds: float = 6,
+        timeout_seconds: float = 40.0,
         poll_interval_seconds: float = 0.3,
     ) -> None:
         """

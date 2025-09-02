@@ -11,11 +11,11 @@ tasks:
     cmds:
       - |
         devtunnel login
-        devtunnel create aicontactcentre --allow-anonymous
+        devtunnel create aicontactcentre234 --allow-anonymous
         devtunnel port create -p 8000
   run:devtunnel:
     cmds:
-      - devtunnel host aicontactcentre
+      - devtunnel host aicontactcentre234
   run:api:
     dir: api
     cmds:
