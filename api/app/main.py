@@ -55,39 +55,25 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
 
     chat_history = ChatHistory()
 
-    # Prepare plugins list
-    plugins = [
-        CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-        DeliveryPlugin()
-    ]
-    
-    # Try to initialize MCP plugin, but fallback gracefully if it fails
-    orders_api_plugin = None
-    try:
-        # Attempt to create MCP plugin with a short timeout
-        orders_api_plugin = MCPStreamableHttpPlugin(
-            name="Orders API",
-            url=settings.MCP_ORDERS_URL,
-            load_prompts=False # APIM MCP servers only support tools and this will fail if left enabled
+    # Initialise MCP plugin with async context manager
+    async with MCPStreamableHttpPlugin(
+        name="Orders API",
+        url=settings.MCP_ORDERS_URL,
+        load_prompts=False # APIM MCP servers only support tools and this will fail if left enabled
+    ) as orders_api_plugin:
+
+        # Load realtime agent from template and plugins
+        realtime_agent = await get_agent(
+            template_name="DeliveryAgent",
+            plugins=[
+                CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
+                orders_api_plugin,
+                DeliveryPlugin()
+            ],
+            chat_history=chat_history,
+            agent_name="Ollie"
         )
-        # Try to connect with timeout
-        await asyncio.wait_for(orders_api_plugin.connect(), timeout=5.0)
-        plugins.insert(1, orders_api_plugin)  # Insert between CallPlugin and DeliveryPlugin
-        logger.info("Successfully connected to MCP Orders API")
-    except Exception as e:
-        logger.warning(f"Failed to connect to MCP Orders API: {e}. Continuing without orders functionality.")
-        orders_api_plugin = None
 
-    # Load realtime agent from template and plugins
-    realtime_agent = await get_agent(
-        template_name="DeliveryAgent",
-        plugins=plugins,
-        chat_history=chat_history,
-        agent_name="Ollie"
-    )
-
-    # Handle the agent connection with proper cleanup
-    try:
         # Create the realtime client session
         async with realtime_agent(create_response=True) as client:
             # Start handling the messages from the realtime client with callback to forward the audio to acs
@@ -118,13 +104,6 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
                     break
 
             receive_task.cancel()
-    finally:
-        # Clean up MCP connection if it was established
-        if orders_api_plugin:
-            try:
-                await orders_api_plugin.disconnect()
-            except Exception:
-                pass
 
 
 if __name__ == "__main__":
