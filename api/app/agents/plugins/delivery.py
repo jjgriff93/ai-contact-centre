@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any
@@ -57,13 +58,13 @@ class DeliveryPlugin:
             candidates.append(f"{slot_date}T10:00:00.046Z")
 
         if not candidates:
-            return []
+            return "No slots available."
 
         # Randomly select between 0 and 10 unique slots from candidates
         max_n = min(10, len(candidates))
         n = int(np.random.randint(0, max_n + 1))  # inclusive upper bound
         if n == 0:
-            return []
+            return "No slots available."
 
         chosen_idxs = np.random.choice(len(candidates), size=n, replace=False)
         # Sort for a stable, chronological order in the response
@@ -71,7 +72,7 @@ class DeliveryPlugin:
 
         slots = [DeliverySlotModel(id=str(idx + 1), start_time=t) for idx, t in enumerate(chosen_times)]
 
-        return slots
+        return json.dumps(slots)
 
     @kernel_function
     def schedule_delivery(
