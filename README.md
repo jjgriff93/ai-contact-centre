@@ -2,7 +2,7 @@
 
 A basic AI Contact Centre application that uses Azure Communication Services (ACS) to receive phone calls and Azure AI Foundry to provide a voice agent powered by the [Voice Live](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) API.
 
-> Also compatible with OpenAI realtime models through additional [configuration files](./api/app/agents/settings).
+> Also compatible with OpenAI realtime models through additional [configuration files](./api/app/agents/settings). See [configuration](#configuration).
 
 ## Getting started
 
