@@ -1,6 +1,8 @@
-# AI Contact Centre with Voice Live
+# AI Contact Centre with Azure Voice Live
 
 A basic AI Contact Centre application that uses Azure Communication Services (ACS) to receive phone calls and Azure AI Foundry to provide a voice agent powered by the [Voice Live](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) API.
+
+> Also compatible with OpenAI realtime models through additional [configuration files](./api/app/agents/settings).
 
 ## Getting started
 
@@ -71,6 +73,7 @@ export AZURE_ACS_ENDPOINT="https://your-acs-resource.communication.azure.com"
 ```
 
 **CLI Commands:**
+
 ```bash
 # Show available commands
 uv run infra/scripts/phone_cli.py --help
