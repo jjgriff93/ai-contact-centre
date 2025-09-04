@@ -32,6 +32,9 @@ param principalId string
 @description('Tags that will be applied to all resources (pass in env var as JSON string with single quotes)')
 param tags string = '{}'
 
+@description('URI for the MCP server to connect to for agent order management tools')
+param mcpOrdersUri string
+
 @description('Enable automatic phone number purchase during deployment')
 param phoneNumberAutoPurchase bool = true
 
@@ -67,6 +70,7 @@ module resources 'modules/container.bicep' = {
     tags: commonTags
     principalId: principalId
     apiExists: apiExists
+    mcpOrdersUri: mcpOrdersUri
     aiServicesEndpoint: aiModelsDeploy.outputs.AZURE_AI_SERVICES_ENDPOINT
     communicationServiceName: acs.outputs.AZURE_COMMUNICATION_SERVICE_NAME
     eventGridSystemTopicName: acs.outputs.AZURE_EVENT_GRID_SYSTEM_TOPIC

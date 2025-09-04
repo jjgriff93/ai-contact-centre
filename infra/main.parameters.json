@@ -17,6 +17,9 @@
     "tags": {
       "value": "${AZURE_TAGS}"
     },
+    "mcpOrdersUri": {
+      "value": "${MCP_ORDERS_URI}"
+    },
     "phoneNumberAutoPurchase": {
       "value": "${AZURE_PHONE_NUMBER_AUTO_PURCHASE}"
     },
