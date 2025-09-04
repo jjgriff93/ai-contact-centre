@@ -17,12 +17,9 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 
 ### 2. Configure phone number auto-purchase (optional)
 
-Phone numbers are automatically purchased during deployment by default. You can customize the configuration by setting azd environment variables:
+Phone numbers are automatically purchased during deployment. By default, a GB toll-free number is auto-purchased during deployment; no additional configuration is required. You can customize the configuration by setting azd environment variables:
 
 ```bash
-# Default: Auto-purchase GB toll-free number (no configuration needed)
-azd up
-
 # Configure for US toll-free instead
 azd env set AZURE_PHONE_NUMBER_COUNTRY US
 azd env set AZURE_PHONE_NUMBER_TYPE toll-free
