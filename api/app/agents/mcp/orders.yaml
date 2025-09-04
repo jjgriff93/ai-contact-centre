@@ -5,7 +5,7 @@
 # - headers: Optional HTTP headers (e.g., Authorization)
 # - load_prompts: Whether to load prompts from server (APIM servers often require false)
 # - enabled: Toggle to include/exclude this server without deleting the file
-name: Orders API
+name: Orders & Deliveries API
 url: ${MCP_ORDERS_URL}
 # headers:
 #   Authorization: Bearer ${ORDERS_API_TOKEN}

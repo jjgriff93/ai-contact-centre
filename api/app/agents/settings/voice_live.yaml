@@ -3,8 +3,9 @@
 service: azure_voice_live
 api_version: 2025-05-01-preview
 
-instructions: |
-  You are a helpful voice assistant.
+# Instructions are provided by the prompt template and will override this field
+# instructions: |
+#   You are a helpful real-time assistant.
 
 voice:
   name: en-US-Andrew:DragonHDLatestNeural

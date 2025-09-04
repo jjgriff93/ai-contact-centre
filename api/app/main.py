@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from semantic_kernel.contents import (AudioContent, ChatHistory,
                                       RealtimeAudioEvent)
 
-from .agents.plugins import CallPlugin, DeliveryPlugin
+from .agents.plugins import CallPlugin
 from .agents.utils import (get_agent, handle_realtime_messages,
                            load_mcp_plugins_from_folder)
 from .dependencies import get_acs_client
@@ -84,7 +84,6 @@ async def agent_connect(websocket: WebSocket, acs_client=Depends(get_acs_client)
             plugins=[
                 *bound_mcp_plugins,
                 CallPlugin(acs_client=acs_client, call_connection_id=call_connection_id),
-                DeliveryPlugin()
             ],
             chat_history=chat_history,
             agent_name="Sam"
