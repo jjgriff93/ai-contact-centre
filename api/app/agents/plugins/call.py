@@ -22,12 +22,12 @@ class CallPlugin:
 
         if not self._call_connection_id:
             logger.warning("No call connection ID available to get caller phone number. Returning test number")
-            return "888888888888"
+            return "1234567890"
 
         # Retrieve the caller's phone number from the ACS client
         caller_info = await self._acs_client.get_call_connection(self._call_connection_id).get_call_properties()
         # TODO: get caller number
-        return "888888888888"
+        return "1234567890"
 
     @kernel_function
     def transfer_to_human(

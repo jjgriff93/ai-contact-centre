@@ -15,34 +15,57 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 - [UV](https://www.uv.dev/)
 - [Taskfile](https://taskfile.dev/)
 
-### 2. Configure phone number auto-purchase (optional)
+### 2. Configure environment variables
 
-Phone numbers are automatically purchased during deployment. By default, a GB toll-free number is auto-purchased during deployment; no additional configuration is required. You can customize the configuration by setting azd environment variables:
+Configure the application before deployment by setting azd environment variables.
 
-```bash
-# Configure for US toll-free instead
-azd env set AZURE_PHONE_NUMBER_COUNTRY US
-azd env set AZURE_PHONE_NUMBER_TYPE toll-free
+#### Required API configuration
 
-# Configure for GB geographic
-azd env set AZURE_PHONE_NUMBER_COUNTRY GB
-azd env set AZURE_PHONE_NUMBER_TYPE geographic
+- `MCP_ORDERS_URL`: The URL for the MCP Orders API (required)
 
-# Disable auto-purchase entirely
-azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE false
-```
+#### Optional configuration
 
-Available configuration options:
+**API options:**
+
+- `REALTIME_CONFIG_PATH`: The realtime service configuration file to use (within `api/app/agents/settings`, default: `voice_live.yaml`)
+
+**Phone number options:**
 
 - `AZURE_PHONE_NUMBER_AUTO_PURCHASE`: `true` or `false` (default: `true`)
 - `AZURE_PHONE_NUMBER_COUNTRY`: Country code - `US`, `CA`, `GB`, `AU`, `FR`, `DE`, `IT`, `ES`, `NL`, `SE`, `NO`, `DK`, `FI`, `IE`, `CH`, `AT`, `BE`, `PT` (default: `GB`)
 - `AZURE_PHONE_NUMBER_TYPE`: `toll-free` or `geographic` (default: `toll-free`)
+
+**Examples:**
+
+```bash
+# Required: Set MCP Orders API URL
+azd env set MCP_ORDERS_URL https://your-mcp-api.com
+
+# Optional: Use OpenAI realtime models instead of Azure Voice Live
+azd env set REALTIME_CONFIG_PATH 4o_realtime.yaml
+
+# Optional: Configure for US toll-free instead of GB
+azd env set AZURE_PHONE_NUMBER_COUNTRY US
+azd env set AZURE_PHONE_NUMBER_TYPE toll-free
+
+# Optional: Configure for GB geographic
+azd env set AZURE_PHONE_NUMBER_COUNTRY GB
+azd env set AZURE_PHONE_NUMBER_TYPE geographic
+
+# Optional: Disable auto-purchase entirely
+azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE false
+```
+
+Phone numbers are automatically purchased during deployment (GB toll-free by default) unless disabled.
+
+#### View current configuration
 
 You can view your current azd environment variables with:
 
 ```bash
 azd env get-values
 ```
+
 
 ### 3. Deploy resources
 
@@ -56,7 +79,7 @@ This will package up the code in the `api` folder, deploy the Azure resources de
 
 A phone number will be automatically purchased after deployment (GB toll-free by default). The deployment is idempotent - it will reuse existing numbers that match your configuration and release any that don't match.
 
-### 4. Manage phone numbers
+### 4. Manage phone numbers (optional)
 
 #### Using the CLI tool (recommended)
 
@@ -97,6 +120,7 @@ uv run infra/scripts/phone_cli.py release +1234567890
 #### Using Azure portal
 
 You can also purchase a phone number from the Azure portal using the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new).
+
 
 ### 5. Run API locally
 
@@ -150,19 +174,3 @@ Like with the local API, set up an Event Grid subscription for the remote API to
 > Disable the local API event grid subscription to avoid conflicts.
 
 Then phoning the ACS number should connect you to the AI agent running in the Azure Container App.
-
-## Configuration
-
-### API Environment Variables
-
-The following environment variables can be used to configure the application:
-
-- `MCP_ORDERS_URL`: The URL for the MCP Orders API.
-
-- `REALTIME_CONFIG_PATH`: The path to the realtime service configuration file to use (within `api/app/agents/settings`).
-
-  For example, to change from using the default `voice_live.yaml` file to `4o_realtime.yaml` in local development, you would run:
-
-  ```bash
-  azd env set REALTIME_CONFIG_PATH 4o_realtime.yaml
-  ```
