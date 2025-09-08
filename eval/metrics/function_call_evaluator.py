@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -36,6 +36,15 @@ class FunctionCall:
         return f"{self.plugin}.{self.name}({args_str})"
 
 
+@dataclass
+class FunctionCallMetrics:
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    f1: Optional[float] = None
+    total: Optional[int] = None
+    faults: Optional[int] = None
+
+
 class FunctionCallEvaluator:
     """
     An evaluator to calculate function call metrics.
@@ -47,6 +56,9 @@ class FunctionCallEvaluator:
     def __call__(self, *, function_calls: List[Dict],
                  expected_function_calls: List[Dict], unexpected_function_calls: List[Dict],
                  **kwargs) -> Dict[str, float]:
+
+        if function_calls is None:  # Failed run - no outputs to evaluate
+            return FunctionCallMetrics()
 
         # Convert the dicts to FunctionCall objects for easier handling
         actual = [FunctionCall.from_dict(fcall) for fcall in function_calls]
@@ -62,13 +74,13 @@ class FunctionCallEvaluator:
         precision = nmatches_expected / len(actual) if actual else 0
         recall = nmatches_expected / len(expected) if expected else 0
 
-        return {
-            "precision": precision,
-            "recall": recall,
-            "f1": 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0,
-            "total": len(actual),
-            "faults": nmatches_unexpected
-        }
+        return FunctionCallMetrics(
+            precision=precision,
+            recall=recall,
+            f1=2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0,
+            total=len(actual),
+            faults=nmatches_unexpected
+        )
 
     # def __aggregate__(self, input):
     #     pass  #TODO

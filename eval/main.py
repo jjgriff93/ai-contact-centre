@@ -202,15 +202,18 @@ class ProxyHumanConversator:
         Returns:
             Dict[str, object]: conversation results including history and function calls
         """
-        # Run the conversation
-        state = asyncio.run(self._run_conversation(scenario_name.replace(' ', '_'), instructions))
-
-        # Return outputs for evaluation
-        return {
-            "function_calls": state.function_calls,
-            "transcription": state.history,
-            "conversation": state.get_conversation_for_evaluation()
-        }
+        try:
+            # Run the conversation
+            state = asyncio.run(self._run_conversation(scenario_name.replace(' ', '_'), instructions))
+            # Return outputs for evaluation
+            return {
+                "function_calls": state.function_calls,
+                "transcription": state.history,
+                "conversation": state.get_conversation_for_evaluation()
+            }
+        except Exception as e:
+            logger.exception(f"Exception during conversation scenario '{scenario_name}'")
+            return {"function_calls": None, "transcription": None, "conversation": None, "error": str(e)}
 
     async def _run_conversation(self, scenario_name: str, scenario_instructions: str) -> Dict[str, object]:
         """Run the conversation and return final state."""
@@ -344,7 +347,7 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
     # Run evaluation across all test cases
     evaluation_name = f"conversation-tests-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     azure_evaluator_args = {"credential": DefaultAzureCredential(), "azure_ai_project": azure_ai_project_endpoint}
-    # os.environ["PF_WORKER_COUNT"] = "1"  # Max concurrency for eval target run  #TODO: useful?
+    os.environ["PF_WORKER_COUNT"] = "5"  # Max concurrency for eval target run - see https://github.com/Azure/azure-sdk-for-python/blob/ac233e81159b256b8dd53528d66353b649fffab5/sdk/evaluation/azure-ai-evaluation/azure/ai/evaluation/_evaluate/_batch_run/_run_submitter_client.py#L43
     result = evaluate(
         evaluation_name=evaluation_name,
         data=eval_jsonl_path,
@@ -367,6 +370,7 @@ def run_test_suite(azure_ai_project_endpoint: str) -> None:
                 }
             },
         },
+        fail_on_evaluator_errors=False,
         azure_ai_project=azure_ai_project_endpoint,
         output_path=output_dir / f"eval_results_{evaluation_name}.json",
     )
