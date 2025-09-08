@@ -10,6 +10,6 @@ dependencies = [
     "dotenv-azd>=0.3.0",
     "fastapi[standard]>=0.116.1",
     "pydantic-settings>=2.10.1",
-    "semantic-kernel[realtime]>=1.32.2",
+    "semantic-kernel[mcp,realtime]>=1.35.3",
     "websockets>=15.0.1",
 ]

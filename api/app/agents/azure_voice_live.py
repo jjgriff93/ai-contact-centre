@@ -1,23 +1,18 @@
 import logging
 import sys
-from typing import (
-    Annotated,
-    Any,
-    Dict,
-    List,
-    Literal,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
-)
+from typing import (Annotated, Any, Dict, List, Literal, Mapping, Optional,
+                    Sequence, Union)
 
 from openai.types.beta.realtime.session import Tool, Tracing
-from openai.types.beta.realtime.session_update_event_param import SessionClientSecret
+from openai.types.beta.realtime.session_update_event_param import \
+    SessionClientSecret
 from pydantic import Field
 from semantic_kernel.connectors.ai import PromptExecutionSettings
-from semantic_kernel.connectors.ai.open_ai import AzureRealtimeWebsocket, SendEvents
-from semantic_kernel.contents import RealtimeEvents
+from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
+                                                   SendEvents)
+from semantic_kernel.contents import (ImageContent, RealtimeEvents,
+                                      RealtimeFunctionResultEvent, TextContent)
+from semantic_kernel.contents.binary_content import BinaryContent
 from semantic_kernel.kernel_pydantic import KernelBaseModel
 
 if sys.version_info >= (3, 12):
@@ -27,7 +22,7 @@ else:
 
 
 logger: logging.Logger = logging.getLogger(
-    "semantic_kernel.connectors.ai.open_ai.realtime"
+    "semantic_kernel.connectors.ai.azure.voice_live"
 )
 
 
@@ -58,12 +53,16 @@ class AzureVoiceLiveInputAudioTranscription(KernelBaseModel):
 
     Args:
         model: The model to use for transcription, should be one of the following:
-            - azure-fast-transcription
+            - azure-speech
+            - gpt-4o-transcribe
+            - whisper1
+        language: The language for the transcription
         phrase_list: A list of phrases to help the model recognize specific terms or phrases in the audio.
             Currently doesn't support gpt-4o-realtime-preview, gpt-4o-mini-realtime-preview, and phi4-mm-realtime.
     """
 
-    model: Literal["azure-fast-transcription"] | None = None
+    model: Literal["azure-speech", "gpt-4o-transcribe", "whisper1"] | None = None
+    language: str | None = None
     phrase_list: Sequence[str] | None = None
 
 
@@ -185,21 +184,78 @@ class AzureVoiceLiveSession(KernelBaseModel):
     animation: Optional[AzureVoiceLiveAnimation] = None
 
 
-class AzureVoiceLiveWebsocket(AzureRealtimeWebsocket):
-    """Azure Voice Live Websocket client."""
+# NOTE: We define a patched base class below and then subclass it for Voice Live.
+
+class PatchedAzureRealtimeWebsocket(AzureRealtimeWebsocket):
+    """Azure Realtime Websocket client with centralized function result sanitization.
+
+    Ensures function tool results are strings to prevent hanging in the realtime service.
+    """
 
     def __init__(
         self,
+        *,
         endpoint: str,
+        deployment_name: Optional[str] = None,
+        ad_token_provider: Optional[Any] = None,
+        api_key: Optional[str] = None,
+        api_version: Optional[str] = None,
+        plugins: Optional[List[Any]] = None,
+        settings: Optional[PromptExecutionSettings] = None,
         **kwargs: Any,
-    ):
-        # Voice Live uses a slightly different path structure to OpenAI Realtime
-        voicelive_ws_endpoint = endpoint.replace("https://", "wss://") + "voice-live"
+    ) -> None:
         super().__init__(
             endpoint=endpoint,
-            websocket_base_url=voicelive_ws_endpoint,
+            deployment_name=deployment_name,
+            ad_token_provider=ad_token_provider,
+            api_key=api_key,
+            api_version=api_version,
+            plugins=plugins,
+            settings=settings,
             **kwargs,
         )
+
+    @staticmethod
+    def _sanitize_function_result(event: RealtimeEvents) -> None:
+        if isinstance(event, RealtimeFunctionResultEvent):
+            # If the function response is not a string it will cause realtime service to hang indefinitely
+            # https://github.com/microsoft/semantic-kernel/issues/13003
+            # We can work around by serializing depending on what type of result it is
+            # - If MCP response, it will be list with one element
+            result = event.function_result.result
+            if isinstance(result, list):
+                if isinstance(result[0], TextContent):
+                    serialized_res = result[0].text
+                elif isinstance(result[0], ImageContent):
+                    serialized_res = result[0].data_uri
+                elif isinstance(result[0], BinaryContent):
+                    serialized_res = result[0].data_string
+                else:
+                    serialized_res = str(result)
+            # - If anything else, we can use the FunctionResultContent.__str__ to serialize
+            else:
+                serialized_res = str(event.function_result)
+
+            event.function_result.result = serialized_res
+
+    @override
+    async def send(self, event: RealtimeEvents, **kwargs: Any) -> None:
+        self._sanitize_function_result(event)
+        await super().send(event, **kwargs)
+
+
+class AzureVoiceLiveWebsocket(PatchedAzureRealtimeWebsocket):
+    """Azure Voice Live Websocket client."""
+
+    def __init__(self, **kwargs: Any):
+        # Voice Live uses a slightly different path structure to OpenAI Realtime
+        endpoint = kwargs.get("endpoint")
+        if not endpoint:
+            raise ValueError("'endpoint' is required to initialize AzureVoiceLiveWebsocket")
+        voicelive_ws_endpoint = endpoint.replace("https://", "wss://") + "voice-live"
+        # Inject the custom websocket base URL
+        kwargs["websocket_base_url"] = voicelive_ws_endpoint
+        super().__init__(**kwargs)
 
     @override
     def get_prompt_execution_settings_class(self) -> type[PromptExecutionSettings]:
@@ -207,7 +263,12 @@ class AzureVoiceLiveWebsocket(AzureRealtimeWebsocket):
 
     @override
     async def send(self, event: RealtimeEvents, **kwargs: Any) -> None:
-        """Send an event to the Websocket client. We need to override to handle the modified session update event"""
+        """Send an event to the Websocket client.
+
+        We need to override to handle the modified session update event for Voice Live
+        due to OpenAI SDK expecting different exec settings. Function result sanitization
+        is handled by the patched base class.
+        """
         if event.service_type == SendEvents.SESSION_UPDATE:
             data = event.service_event
             if not data:

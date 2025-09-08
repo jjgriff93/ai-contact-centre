@@ -1,0 +1,35 @@
+# Azure OpenAI Realtime (WebRTC/WebSocket) execution settings
+
+service: azure_realtime
+api_version: 2024-10-01-preview
+deployment_name: gpt-4o-realtime-preview
+
+# Instructions are provided by the prompt template and will override this field
+# instructions: |
+#   You are a helpful real-time assistant.
+
+# For OpenAI/Azure Realtime, voice is a simple string
+# Example options: alloy, ash, ballad, coral, echo, sage, shimmer, verse
+voice: ballad
+
+turn_detection:
+  type: server_vad
+  create_response: true
+  silence_duration_ms: 800
+  threshold: 0.8
+
+input_audio_transcription:
+  model: gpt-4o-transcribe
+  language: en
+  # prompt: ""
+
+# Optional general settings
+# temperature: 0.8
+# max_response_output_tokens: inf
+# input_audio_format: pcm16
+# output_audio_format: pcm16
+# modalities: [audio, text]
+# input_audio_noise_reduction:
+#   type: near_field
+
+# Function/tool choice behavior is fixed to Auto in code.

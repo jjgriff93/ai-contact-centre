@@ -15,4 +15,6 @@ wheels/
 
 # Test artifacts
 test_outputs/
+
+*.log
 eval_dataset.jsonl
