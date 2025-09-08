@@ -13,8 +13,8 @@ from semantic_kernel.contents import (AudioContent, ChatHistory,
                                       RealtimeAudioEvent)
 
 from .agents.plugins import CallPlugin
-from .agents.utils import (get_agent, handle_realtime_messages,
-                           load_mcp_plugins_from_folder)
+from .agents.realtime_events import handle_realtime_messages
+from .agents.utils import get_agent, load_mcp_plugins_from_folder
 from .dependencies import get_acs_client
 from .routers import calls
 

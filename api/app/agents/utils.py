@@ -1,4 +1,3 @@
-import base64
 import json
 import logging
 import os
@@ -9,15 +8,11 @@ import yaml
 from azure.identity.aio import (DefaultAzureCredential,
                                 get_bearer_token_provider)
 from fastapi import WebSocket
-from numpy import ndarray
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
-                                                   ListenEvents, SendEvents)
+from semantic_kernel.connectors.ai.open_ai import AzureRealtimeWebsocket
 from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_realtime_execution_settings import \
     AzureRealtimeExecutionSettings
-from semantic_kernel.connectors.ai.realtime_client_base import \
-    RealtimeClientBase
 from semantic_kernel.connectors.mcp import MCPStreamableHttpPlugin
 from semantic_kernel.contents import (ChatHistory, FunctionCallContent,
                                       FunctionResultContent)
@@ -203,156 +198,30 @@ async def load_mcp_plugins_from_folder(folder: str | Path | None = None) -> list
             logger.error(f"Failed to load MCP plugin from {file}: {e}")
     return plugins
 
-async def handle_realtime_messages(websocket: WebSocket, client: RealtimeClientBase, chat_history: ChatHistory, is_development_mode: bool = False):
-    """Function that handles the messages from the Realtime service.
+def get_attr(obj: Any, path: str, default: Any | None = None) -> Any | None:
+    """Safely get a nested attribute by dot path (returns default on any miss)."""
+    cur = obj
+    for part in path.split("."):
+        if cur is None:
+            return default
+        cur = getattr(cur, part, None)
+    return cur if cur is not None else default
 
-    This function only handles the non-audio messages.
-    Audio is done through the callback so that it is faster and smoother.
-    """
 
-    async def from_realtime_to_acs(audio: ndarray):
-        """Function that forwards the audio from the model to the websocket of the ACS client."""
-        logger.debug("Audio received from the model, sending to ACS client")
+async def send_chat_history(websocket: WebSocket, chat_history: ChatHistory, from_index: int) -> int:
+    """Send chat history delta to the client and return new index marker."""
+    try:
         await websocket.send_text(
             json.dumps(
                 {
-                    "kind": "AudioData",
-                    "audioData": {
-                        "data": base64.b64encode(audio.tobytes()).decode("utf-8")
-                    },
+                    "kind": "ChatHistory",
+                    "data": export_chat_history(chat_history, from_index=from_index),
                 }
             )
         )
+    except Exception:
+        logger.exception("Failed to send ChatHistory to websocket")
+    return len(chat_history.messages)
 
-    def _get(obj: Any, path: str, default: Any | None = None) -> Any | None:
-        """Safely get a nested attribute by dot path (returns default on any miss)."""
-        cur = obj
-        for part in path.split("."):
-            if cur is None:
-                return default
-            cur = getattr(cur, part, None)
-        return cur if cur is not None else default
 
-    async def _send_chat_history(from_index: int) -> int:
-        """Send chat history delta to the client and return new index marker."""
-        try:
-            await websocket.send_text(
-                json.dumps(
-                    {
-                        "kind": "ChatHistory",
-                        "data": export_chat_history(chat_history, from_index=from_index),
-                    }
-                )
-            )
-        except Exception:
-            logger.exception("Failed to send ChatHistory to websocket")
-        return len(chat_history.messages)
-
-    idx_first_msg_to_send = len(chat_history.messages)  # Chat history will contain system prompt
-
-    try:
-        async for event in client.receive(audio_output_callback=from_realtime_to_acs):
-            se = getattr(event, "service_event", None)
-            match event.service_type:
-                case ListenEvents.SESSION_CREATED:
-                    logger.info("Session Created Message")
-                    logger.debug(f"  Session Id: {_get(se, 'session.id') or '<unknown>'}")
-                case ListenEvents.ERROR:
-                    # Surface tool/MCP errors gracefully to the user and continue
-                    err = _get(se, "error") or "<unknown>"
-                    logger.error(f"  Error: {err}")
-                    chat_history.add_assistant_message(
-                        "I hit a temporary issue calling a tool. Let's try again or continue without it."
-                    )
-                    idx_first_msg_to_send = await _send_chat_history(idx_first_msg_to_send)
-                case ListenEvents.INPUT_AUDIO_BUFFER_CLEARED:
-                    logger.info("Input Audio Buffer Cleared Message")
-                case ListenEvents.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-                    audio_start_ms = _get(se, "audio_start_ms")
-                    logger.debug(
-                        f"Voice activity detection started at {audio_start_ms if audio_start_ms is not None else '<unknown>'} [ms]"
-                    )
-                    await websocket.send_text(
-                        json.dumps(
-                            {"Kind": "StopAudio", "AudioData": None, "StopAudio": {}}
-                        )
-                    )
-                case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
-                    user_transcript = _get(se, "transcript") or ''
-                    logger.info(f" User:-- {user_transcript}")
-                    # Add user message to chat history
-                    if user_transcript:
-                        chat_history.add_user_message(user_transcript)
-                    # Send user transcription to frontend (only in development mode)
-                    if is_development_mode:
-                        await websocket.send_text(
-                            json.dumps(
-                                {
-                                    "kind": "Transcription",
-                                    "data": {
-                                        "speaker": "user",
-                                        "text": user_transcript,
-                                        "timestamp": _get(se, "audio_start_ms") or 0
-                                    }
-                                }
-                            )
-                        )
-                case ListenEvents.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_FAILED:
-                    logger.error(f"  Error: {_get(se, 'error') or '<unknown>'}")
-                case ListenEvents.RESPONSE_AUDIO_TRANSCRIPT_DONE:
-                    transcript = _get(se, "transcript")
-                    logger.info(f" AI:-- {transcript or ''}")
-                    # Add assistant message to chat history
-                    if transcript:
-                        chat_history.add_assistant_message(transcript)
-                        # Send assistant transcription to frontend (only in development mode)
-                        if is_development_mode:
-                            await websocket.send_text(
-                                json.dumps(
-                                    {
-                                        "kind": "Transcription",
-                                        "data": {
-                                            "speaker": "assistant",
-                                            "text": transcript,
-                                            "timestamp": None  # No timestamp available for assistant transcripts
-                                        }
-                                    }
-                                )
-                            )
-                case ListenEvents.RESPONSE_DONE:
-                    logger.info("Response Done Message")
-                    response = _get(se, "response")
-                    response_id = _get(response, "id")
-                    logger.debug(f"  Response Id: {response_id or '<unknown>'}")
-                    status_details = _get(response, "status_details")
-                    if status_details:
-                        try:
-                            logger.debug(
-                                f"  Status Details: {status_details.model_dump_json()}"
-                            )
-                        except Exception:
-                            logger.debug("  Status Details present but could not be serialized")
-                    # Send chat history (including function calls) to client
-                    idx_first_msg_to_send = await _send_chat_history(idx_first_msg_to_send)
-                case SendEvents.CONVERSATION_ITEM_CREATE:
-                    # Add function call result to chat history
-                    function_result = getattr(event, "function_result", None)
-                    if function_result is not None:
-                        chat_history.add_tool_message([function_result])
-        
-    except Exception as e:
-        # Catch-all to prevent websocket handler from crashing on tool/MCP failures
-        logger.exception("Realtime receive loop terminated due to error")
-        # Inform the frontend in a non-fatal way
-        try:
-            await websocket.send_text(
-                json.dumps(
-                    {
-                        "kind": "AgentError",
-                        "message": "A tool call failed. The assistant will continue.",
-                        "details": str(e),
-                    }
-                )
-            )
-        except Exception:
-            pass
+# NOTE: handle_realtime_messages moved to realtime.py to keep this file focused on utilities.
