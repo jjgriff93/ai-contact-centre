@@ -23,6 +23,15 @@
         "LOG_LEVEL": "DEBUG"
       },
       "justMyCode": false
+    },
+    {
+        "name": "Eval Debugger",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "main.py",
+        "python": "eval/.venv/Scripts/python",
+        "cwd": "eval",
+        "justMyCode": false,
     }
   ]
 }
