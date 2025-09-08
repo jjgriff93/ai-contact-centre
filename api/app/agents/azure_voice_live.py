@@ -10,9 +10,7 @@ from pydantic import Field
 from semantic_kernel.connectors.ai import PromptExecutionSettings
 from semantic_kernel.connectors.ai.open_ai import (AzureRealtimeWebsocket,
                                                    SendEvents)
-from semantic_kernel.contents import (ChatMessageContent,
-                                      FunctionResultContent, ImageContent,
-                                      RealtimeEvents,
+from semantic_kernel.contents import (ImageContent, RealtimeEvents,
                                       RealtimeFunctionResultEvent, TextContent)
 from semantic_kernel.contents.binary_content import BinaryContent
 from semantic_kernel.kernel_pydantic import KernelBaseModel
@@ -55,12 +53,16 @@ class AzureVoiceLiveInputAudioTranscription(KernelBaseModel):
 
     Args:
         model: The model to use for transcription, should be one of the following:
-            - azure-fast-transcription
+            - azure-speech
+            - gpt-4o-transcribe
+            - whisper1
+        language: The language for the transcription
         phrase_list: A list of phrases to help the model recognize specific terms or phrases in the audio.
             Currently doesn't support gpt-4o-realtime-preview, gpt-4o-mini-realtime-preview, and phi4-mm-realtime.
     """
 
-    model: Literal["azure-fast-transcription"] | None = None
+    model: Literal["azure-speech", "gpt-4o-transcribe", "whisper1"] | None = None
+    language: str | None = None
     phrase_list: Sequence[str] | None = None
 
 

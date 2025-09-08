@@ -8,26 +8,19 @@ api_version: 2025-05-01-preview
 #   You are a helpful real-time assistant.
 
 voice:
-  name: en-US-Andrew:DragonHDLatestNeural
+  name: en-US-Emma2:DragonHDLatestNeural # en-GB-Ollie:DragonHDV2Neural
   type: azure-standard
   # temperature: 0.8
   # rate: "1.0"
   # endpoint_id: ""
   # custom_lexicon_url: ""
 
-turn_detection:
-  type: server_vad
-  create_response: true
-  silence_duration_ms: 800
-  threshold: 0.8
-  # eagerness: auto
-  # interrupt_response: false
-  # prefix_padding_ms: 0
-  # remove_filler_words: false
-  # end_of_utterance_detection:
-  #   model: semantic_detection_v1
-  #   threshold: 0.5
-  #   timeout: 1000
+# turn_detection:
+#   type: azure_semantic_vad
+#   threshold: 0.3
+#   prefix_padding_ms: 200
+#   silence_duration_ms: 500
+#   remove_filler_words: false
 
 input_audio_noise_reduction:
   type: azure_deep_noise_suppression
@@ -36,10 +29,8 @@ input_audio_echo_cancellation:
   type: server_echo_cancellation
 
 input_audio_transcription:
-  model: whisper-1
-# azure-speech and azure-fast-transcription cause bug https://github.com/jjgriff93/ai-contact-centre/issues/16
-# model: azure-speech
-# phrase_list: []
+  model: gpt-4o-transcribe
+  # phrase_list: []
 
 # Optional general settings
 # temperature: 0.8
