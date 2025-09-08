@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass
 class ConversationMetrics:
-    total_turns: int = None
+    total_turns: Optional[int] = None
 
 
 class ConversationEvaluator:

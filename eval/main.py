@@ -212,6 +212,7 @@ class ProxyHumanConversator:
                 "conversation": state.get_conversation_for_evaluation()
             }
         except Exception as e:
+            logger.exception(f"Exception during conversation scenario '{scenario_name}'")
             return {"function_calls": None, "transcription": None, "conversation": None, "error": str(e)}
 
     async def _run_conversation(self, scenario_name: str, scenario_instructions: str) -> Dict[str, object]:

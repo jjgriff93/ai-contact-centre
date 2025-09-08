@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -38,11 +38,11 @@ class FunctionCall:
 
 @dataclass
 class FunctionCallMetrics:
-    precision: float = None
-    recall: float = None
-    f1: float = None
-    total: int = None
-    faults: int = None
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    f1: Optional[float] = None
+    total: Optional[int] = None
+    faults: Optional[int] = None
 
 
 class FunctionCallEvaluator:
