@@ -1,0 +1,43 @@
+# Azure Voice Live execution settings
+
+service: azure_voice_live
+api_version: 2025-05-01-preview
+
+# Instructions are provided by the prompt template and will override this field
+# instructions: |
+#   You are a helpful real-time assistant.
+
+voice:
+  name: en-US-Emma2:DragonHDLatestNeural # en-GB-Ollie:DragonHDV2Neural
+  type: azure-standard
+  # temperature: 0.8
+  # rate: "1.0"
+  # endpoint_id: ""
+  # custom_lexicon_url: ""
+
+# turn_detection:
+#   type: azure_semantic_vad
+#   threshold: 0.3
+#   prefix_padding_ms: 200
+#   silence_duration_ms: 500
+#   remove_filler_words: false
+
+input_audio_noise_reduction:
+  type: azure_deep_noise_suppression
+
+input_audio_echo_cancellation:
+  type: server_echo_cancellation
+
+input_audio_transcription:
+  model: gpt-4o-transcribe
+  # phrase_list: []
+
+# Optional general settings
+# temperature: 0.8
+# max_response_output_tokens: inf
+# input_audio_sampling_rate: 24000
+# input_audio_format: pcm16
+# output_audio_format: pcm16
+# modalities: [audio, text]
+
+# Function/tool choice behavior is fixed to Auto in code.

@@ -1,6 +1,8 @@
-# AI Contact Centre with Voice Live
+# AI Contact Centre with Azure Voice Live
 
 A basic AI Contact Centre application that uses Azure Communication Services (ACS) to receive phone calls and Azure AI Foundry to provide a voice agent powered by the [Voice Live](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) API.
+
+> Also compatible with OpenAI realtime models through additional [configuration files](./api/app/agents/settings). See [configuration](#configuration).
 
 ## Getting started
 
@@ -13,37 +15,57 @@ A basic AI Contact Centre application that uses Azure Communication Services (AC
 - [UV](https://www.uv.dev/)
 - [Taskfile](https://taskfile.dev/)
 
-### 2. Configure phone number auto-purchase (optional)
+### 2. Configure environment variables
 
-Phone numbers are automatically purchased during deployment by default. You can customize the configuration by setting azd environment variables:
+Configure the application before deployment by setting azd environment variables.
 
-```bash
-# Default: Auto-purchase GB toll-free number (no configuration needed)
-azd up
+#### Required API configuration
 
-# Configure for US toll-free instead
-azd env set AZURE_PHONE_NUMBER_COUNTRY US
-azd env set AZURE_PHONE_NUMBER_TYPE toll-free
+- `MCP_ORDERS_URL`: The URL for the MCP Orders API (required)
 
-# Configure for GB geographic
-azd env set AZURE_PHONE_NUMBER_COUNTRY GB
-azd env set AZURE_PHONE_NUMBER_TYPE geographic
+#### Optional configuration
 
-# Disable auto-purchase entirely
-azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE false
-```
+**API options:**
 
-Available configuration options:
+- `REALTIME_CONFIG_PATH`: The realtime service configuration file to use (within `api/app/agents/settings`, default: `voice_live.yaml`)
+
+**Phone number options:**
 
 - `AZURE_PHONE_NUMBER_AUTO_PURCHASE`: `true` or `false` (default: `true`)
 - `AZURE_PHONE_NUMBER_COUNTRY`: Country code - `US`, `CA`, `GB`, `AU`, `FR`, `DE`, `IT`, `ES`, `NL`, `SE`, `NO`, `DK`, `FI`, `IE`, `CH`, `AT`, `BE`, `PT` (default: `GB`)
 - `AZURE_PHONE_NUMBER_TYPE`: `toll-free` or `geographic` (default: `toll-free`)
+
+**Examples:**
+
+```bash
+# Required: Set MCP Orders API URL
+azd env set MCP_ORDERS_URL https://your-mcp-api.com
+
+# Optional: Use OpenAI realtime models instead of Azure Voice Live
+azd env set REALTIME_CONFIG_PATH 4o_realtime.yaml
+
+# Optional: Configure for US toll-free instead of GB
+azd env set AZURE_PHONE_NUMBER_COUNTRY US
+azd env set AZURE_PHONE_NUMBER_TYPE toll-free
+
+# Optional: Configure for GB geographic
+azd env set AZURE_PHONE_NUMBER_COUNTRY GB
+azd env set AZURE_PHONE_NUMBER_TYPE geographic
+
+# Optional: Disable auto-purchase entirely
+azd env set AZURE_PHONE_NUMBER_AUTO_PURCHASE false
+```
+
+Phone numbers are automatically purchased during deployment (GB toll-free by default) unless disabled.
+
+#### View current configuration
 
 You can view your current azd environment variables with:
 
 ```bash
 azd env get-values
 ```
+
 
 ### 3. Deploy resources
 
@@ -57,7 +79,7 @@ This will package up the code in the `api` folder, deploy the Azure resources de
 
 A phone number will be automatically purchased after deployment (GB toll-free by default). The deployment is idempotent - it will reuse existing numbers that match your configuration and release any that don't match.
 
-### 4. Manage phone numbers
+### 4. Manage phone numbers (optional)
 
 #### Using the CLI tool (recommended)
 
@@ -71,6 +93,7 @@ export AZURE_ACS_ENDPOINT="https://your-acs-resource.communication.azure.com"
 ```
 
 **CLI Commands:**
+
 ```bash
 # Show available commands
 uv run infra/scripts/phone_cli.py --help
@@ -97,6 +120,7 @@ uv run infra/scripts/phone_cli.py release +1234567890
 #### Using Azure portal
 
 You can also purchase a phone number from the Azure portal using the instructions in the [Azure Communication Services documentation](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/telephony/get-phone-number?tabs=windows&pivots=platform-azp-new).
+
 
 ### 5. Run API locally
 

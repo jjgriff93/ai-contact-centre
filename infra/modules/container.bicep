@@ -4,6 +4,9 @@ param location string = resourceGroup().location
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
+@description('URI of the MCP server to connect to for agent order management tools')
+param mcpOrdersUri string
+
 param apiExists bool
 param aiServicesEndpoint string
 
@@ -148,6 +151,10 @@ module api 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'AZURE_ACS_ENDPOINT'
             value: acs.properties.hostName
+          }
+          {
+            name: 'MCP_ORDERS_URL'
+            value: mcpOrdersUri
           }
         ]
       }

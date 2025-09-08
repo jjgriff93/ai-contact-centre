@@ -1,27 +1,33 @@
 {
-    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-    "contentVersion": "1.0.0.0",
-    "parameters": {
-      "environmentName": {
-        "value": "${AZURE_ENV_NAME}"
-      },
-      "location": {
-        "value": "${AZURE_LOCATION}"
-      },
-      "apiExists": {
-        "value": "${SERVICE_API_RESOURCE_EXISTS=false}"
-      },
-      "principalId": {
-        "value": "${AZURE_PRINCIPAL_ID}"
-      },
-      "phoneNumberAutoPurchase": {
-        "value": "${AZURE_PHONE_NUMBER_AUTO_PURCHASE}"
-      },
-      "phoneNumberCountry": {
-        "value": "${AZURE_PHONE_NUMBER_COUNTRY}"
-      },
-      "phoneNumberType": {
-        "value": "${AZURE_PHONE_NUMBER_TYPE}"
-      }
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "apiExists": {
+      "value": "${SERVICE_API_RESOURCE_EXISTS=false}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "tags": {
+      "value": "${AZURE_TAGS}"
+    },
+    "mcpOrdersUri": {
+      "value": "${MCP_ORDERS_URI}"
+    },
+    "phoneNumberAutoPurchase": {
+      "value": "${AZURE_PHONE_NUMBER_AUTO_PURCHASE}"
+    },
+    "phoneNumberCountry": {
+      "value": "${AZURE_PHONE_NUMBER_COUNTRY}"
+    },
+    "phoneNumberType": {
+      "value": "${AZURE_PHONE_NUMBER_TYPE}"
     }
+  }
 }
