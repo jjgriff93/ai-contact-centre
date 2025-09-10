@@ -224,11 +224,11 @@ class PatchedAzureRealtimeWebsocket(AzureRealtimeWebsocket):
             # - If MCP response, it will be list with one element
             result = event.function_result.result
             if isinstance(result, list):
-                if isinstance(result[0], TextContent):
+                if len(result) > 0 and isinstance(result[0], TextContent):
                     serialized_res = result[0].text
-                elif isinstance(result[0], ImageContent):
+                elif len(result) > 0 and isinstance(result[0], ImageContent):
                     serialized_res = result[0].data_uri
-                elif isinstance(result[0], BinaryContent):
+                elif len(result) > 0 and isinstance(result[0], BinaryContent):
                     serialized_res = result[0].data_string
                 else:
                     serialized_res = str(result)
