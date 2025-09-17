@@ -1,6 +1,7 @@
 # Azure Voice Live execution settings
 
 service: azure_voice_live
+deployment_name: gpt-4o-realtime-preview
 api_version: 2025-05-01-preview
 
 # Instructions are provided by the prompt template and will override this field

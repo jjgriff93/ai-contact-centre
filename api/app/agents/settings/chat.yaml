@@ -1,0 +1,14 @@
+# Azure Chat execution settings
+
+deployment_name: gpt-5-chat
+# api_version: 2024-06-01-preview
+
+# Optional general settings
+# temperature: 0.8
+# max_response_output_tokens: inf
+
+# Instructions are provided by the prompt template and will override this field
+# instructions: |
+#   You are a helpful assistant.
+
+# Function/tool choice behavior is fixed to Auto in code.
